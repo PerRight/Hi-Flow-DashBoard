@@ -58,14 +58,21 @@ export const SITE = {
   spanLon: 0.0028
 };
 
-// ── 서버 (라즈베리파이 FastAPI) ────────────────────────────────────────────
-// 기본값은 대시보드를 서빙한 호스트의 8000 포트.
-// Vite dev(localhost:5173)에서는 http://localhost:8000 · ws://localhost:8000 이 되고,
-// 라즈베리파이 핫스팟에서 dist 를 서빙하면 그 IP 로 자동으로 붙는다.
-const SERVER_HOST = `${globalThis.location?.hostname || 'localhost'}:8000`;
+// ── 서버 연결 주소 ────────────────────────────────────────────────────────
+// 세 가지 환경에서 모두 동작해야 한다:
+//   ① Vite dev (localhost:5173)      → http://localhost:8000 · ws://localhost:8000
+//   ② 라즈베리파이 핫스팟 (평문 8000) → 그 IP 의 8000 포트
+//   ③ 클라우드 nginx 뒤 (HTTPS 443)  → 같은 오리진, wss://
+//
+// ③이 중요하다: HTTPS 페이지에서 ws:// 를 열면 브라우저가 mixed content 로
+// 차단해 대시보드가 조용히 죽는다. 반드시 wss:// 를 써야 한다 (CLAUDE.md 0절).
+// nginx 가 /ws/ 를 8000 으로 넘겨주므로 포트를 붙이지 않고 같은 오리진을 쓴다.
+const _loc = globalThis.location;
+const _secure = _loc?.protocol === 'https:';
+const SERVER_HOST = _secure ? _loc.host : `${_loc?.hostname || 'localhost'}:8000`;
 export const SERVER = {
-  http: `http://${SERVER_HOST}`,
-  ws: `ws://${SERVER_HOST}`
+  http: `${_secure ? 'https' : 'http'}://${SERVER_HOST}`,
+  ws: `${_secure ? 'wss' : 'ws'}://${SERVER_HOST}`
 };
 
 // ── 히트맵 (CLAUDE.md 1절: 컬러 도메인 [100,280] 고정) ─────────────────────

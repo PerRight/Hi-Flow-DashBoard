@@ -1,0 +1,35 @@
+[Unit]
+Description=UWD 라즈베리파이 서버 (정본 — 수심 추정·SQLite 저장·브로드캐스트)
+Documentation=https://github.com/PerRight/Hi-Flow-DashBoard
+After=network.target
+
+# 주의: network-online.target 을 기다리지 않는다.
+# 저수지에서 LTE 가 없어도 측정은 진행돼야 한다 (CLAUDE.md 0절 — 클라우드가
+# 죽어도 측정은 정상 진행된다). 네트워크를 기다리게 만들면 오프라인에서
+# 부팅이 멈춰 조사 자체가 불가능해진다.
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/app/server
+
+# ⚠️ CLAUDE.md 6절 — 현장 유닛에는 UWD_MOCK 을 절대 넣지 않는다.
+#    목업이 켜진 채 현장에 나가면 feed 가 죽는 순간 가짜 값이 ok 로 표시된다.
+Environment=UWD_MOCK=0
+Environment=UWD_DB=/home/pi/app/server/data/records.db
+
+# 0.0.0.0 으로 여는 이유: 보트 위 대시보드가 핫스팟을 통해 붙는다.
+ExecStart=/home/pi/app/server/.venv/bin/python -m uvicorn app:app \
+          --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=3
+
+# SIGINT 로 종료해야 lifespan 의 store.flush() 가 돌아 미커밋분이 저장된다.
+# 이걸 SIGKILL 로 두면 최대 5초분의 측정 레코드가 사라진다 (6절 무손실 위반).
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

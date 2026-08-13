@@ -1,0 +1,35 @@
+[Unit]
+Description=UWD 클라우드 미러 서버 (FastAPI)
+Documentation=https://github.com/PerRight/Hi-Flow-DashBoard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hiflow
+Group=hiflow
+WorkingDirectory=/home/hiflow/app/server
+
+# ⚠️ CLAUDE.md 6절 — 목업은 절대 켜지 않는다.
+#    실기 feed 가 끊겼을 때 목업이 조용히 이어받아 가짜 값을 status:"ok" 로
+#    표시하는 것이 이 프로젝트가 정의한 "최악의 버그"다.
+#    경로 검증 시에만 아래 줄의 주석을 풀고, 검증이 끝나면 반드시 다시 주석 처리한다.
+# Environment=UWD_MOCK=1
+Environment=UWD_MOCK=0
+Environment=UWD_DB=/home/hiflow/app/server/data/records.db
+
+ExecStart=/home/hiflow/app/server/.venv/bin/python -m uvicorn app:app \
+          --host 127.0.0.1 --port 8000
+
+# 127.0.0.1 로 묶는 이유: 외부 노출은 nginx 가 443 으로만 담당한다.
+# 8000 을 직접 열어두면 HTTPS 를 우회한 평문 접속이 남는다.
+
+Restart=always
+RestartSec=3
+
+# 종료 시 store.flush() 가 미커밋분을 기록할 시간을 준다 (5초 배치 커밋)
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

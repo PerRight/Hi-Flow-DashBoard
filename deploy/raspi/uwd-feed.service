@@ -1,0 +1,29 @@
+[Unit]
+Description=UWD EC/TDS 수집기 (RS485 -> /ws/ingest)
+Documentation=https://github.com/PerRight/Hi-Flow-DashBoard
+After=uwd-server.service
+Wants=uwd-server.service
+
+# 센서 USB 어댑터가 꽂혀 있어야 의미가 있다.
+# (포트가 /dev/ttyUSB0 가 아니면 아래 ExecStart 와 함께 이 줄도 고칠 것)
+After=dev-ttyUSB0.device
+BindsTo=dev-ttyUSB0.device
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/app/raspi
+
+# --server 는 localhost 고정. 라즈베리파이 서버가 정본이므로
+# feed 는 클라우드로 직접 보내지 않는다 (CLAUDE.md 0절 역할 분담).
+ExecStart=/home/pi/app/server/.venv/bin/python feed.py \
+          --port /dev/ttyUSB0 \
+          --server ws://localhost:8000/ws/ingest \
+          --quiet
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
