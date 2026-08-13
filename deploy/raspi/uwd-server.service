@@ -12,15 +12,15 @@ After=network.target
 Type=simple
 User=pi
 Group=pi
-WorkingDirectory=/home/pi/app/server
+WorkingDirectory=/home/pi/Hiflow/server
 
 # ⚠️ CLAUDE.md 6절 — 현장 유닛에는 UWD_MOCK 을 절대 넣지 않는다.
 #    목업이 켜진 채 현장에 나가면 feed 가 죽는 순간 가짜 값이 ok 로 표시된다.
 Environment=UWD_MOCK=0
-Environment=UWD_DB=/home/pi/app/server/data/records.db
+Environment=UWD_DB=/home/pi/Hiflow/server/data/records.db
 
 # 0.0.0.0 으로 여는 이유: 보트 위 대시보드가 핫스팟을 통해 붙는다.
-ExecStart=/home/pi/app/server/.venv/bin/python -m uvicorn app:app \
+ExecStart=/home/pi/Hiflow/server/.venv/bin/python -m uvicorn app:app \
           --host 0.0.0.0 --port 8000
 
 Restart=always

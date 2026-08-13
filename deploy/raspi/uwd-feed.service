@@ -13,11 +13,11 @@ BindsTo=dev-ttyUSB0.device
 Type=simple
 User=pi
 Group=pi
-WorkingDirectory=/home/pi/app/raspi
+WorkingDirectory=/home/pi/Hiflow/raspi
 
 # --server 는 localhost 고정. 라즈베리파이 서버가 정본이므로
 # feed 는 클라우드로 직접 보내지 않는다 (CLAUDE.md 0절 역할 분담).
-ExecStart=/home/pi/app/server/.venv/bin/python feed.py \
+ExecStart=/home/pi/Hiflow/server/.venv/bin/python feed.py \
           --port /dev/ttyUSB0 \
           --server ws://localhost:8000/ws/ingest \
           --quiet
