@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>수중드론 수질측정 대시보드</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-title">수중드론 수질측정 대시보드</span>
+      <span class="brand-site" id="site-name">세종 용암저수지</span>
+    </div>
+
+    <div class="topbar-right">
+      <label class="field">
+        <span class="field-label">측정 차수</span>
+        <select id="survey-select"></select>
+      </label>
+      <div id="link-status" class="link-status link-ok">
+        <span class="dot"></span><span class="link-text">연결됨</span>
+      </div>
+      <div id="clock" class="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 1. 현재 수심 + 윈치 조작 -->
+    <section class="panel panel-depth" id="panel-depth">
+      <h2 class="panel-title">현재 수심</h2>
+      <div class="panel-body" id="depth-body"></div>
+    </section>
+
+    <!-- 2. EC / TDS / 수온 게이지 -->
+    <section class="panel panel-gauges">
+      <h2 class="panel-title">센서 실측값 <span class="hint">1초 갱신</span></h2>
+      <div class="panel-body gauge-grid" id="gauge-body"></div>
+    </section>
+
+    <!-- 3. 위성 지도 -->
+    <section class="panel panel-map">
+      <h2 class="panel-title">
+        위치 · 이동 궤적 <span class="hint" id="map-basemap-hint">기본지도</span>
+      </h2>
+      <div class="panel-body no-pad">
+        <div id="map" class="map-canvas"></div>
+      </div>
+    </section>
+
+    <!-- 4. 시계열 -->
+    <section class="panel panel-chart">
+      <h2 class="panel-title">최근 5분 시계열 <span class="hint">1초 갱신</span></h2>
+      <div class="panel-body chart-grid">
+        <div class="chart-cell"><canvas id="chart-ec"></canvas></div>
+        <div class="chart-cell"><canvas id="chart-tds"></canvas></div>
+        <div class="chart-cell"><canvas id="chart-temp"></canvas></div>
+      </div>
+    </section>
+
+    <!-- 5. 3D 히트맵 -->
+    <section class="panel panel-heat">
+      <h2 class="panel-title">
+        EC 3D 히트맵 <span class="hint">3초 배치 갱신</span>
+      </h2>
+      <div class="depth-tabs" id="depth-tabs"></div>
+      <div class="panel-body no-pad heat-wrap">
+        <div id="heatmap" class="map-canvas"></div>
+        <div class="heat-legend" id="heat-legend"></div>
+        <div class="heat-stats" id="heat-stats"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="footer-stats">-</span>
+    <span class="spacer"></span>
+    <button id="btn-inject-stale" class="mini-btn" title="Wi-Fi 끊김 상황을 강제로 재현합니다">
+      끊김 상황 주입(4초)
+    </button>
+  </footer>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

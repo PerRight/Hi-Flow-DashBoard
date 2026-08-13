@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+websockets>=12.0
+# 선택: /export?format=xlsx 를 쓰려면 설치. 없으면 CSV 만 지원.
+openpyxl>=3.1

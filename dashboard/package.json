@@ -1,0 +1,23 @@
+{
+  "name": "underwater-drone-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "수중드론 수질측정 대시보드 (1단계: 목업 스트림 + 전 패널)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@deck.gl/aggregation-layers": "^9.1.0",
+    "@deck.gl/core": "^9.1.0",
+    "@deck.gl/layers": "^9.1.0",
+    "@deck.gl/mapbox": "^9.1.0",
+    "chart.js": "^4.4.0",
+    "maplibre-gl": "^5.0.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
