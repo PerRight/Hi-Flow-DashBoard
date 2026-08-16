@@ -18,6 +18,7 @@ server/data/
 # ── 빌드·의존성 (설치로 재생성되므로 커밋 불필요) ──────────────────────────
 node_modules/
 dashboard/dist/
+dashboard/dist_old_*/
 .venv/
 venv/
 __pycache__/
