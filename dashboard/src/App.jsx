@@ -107,7 +107,7 @@ export default function App() {
 
         <section className="panel panel-heat">
           <h2 className="panel-title">
-            EC 3D 히트맵 <span className="hint">3초 배치 갱신</span>
+            수질 3D 히트맵 <span className="hint">3초 배치 갱신</span>
           </h2>
           <HeatmapPanel ref={heatRef} batchSeq={d.batchSeq} recordsRef={d.recordsRef} />
         </section>

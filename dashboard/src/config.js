@@ -75,22 +75,46 @@ export const SERVER = {
   ws: `${_secure ? 'wss' : 'ws'}://${SERVER_HOST}`
 };
 
-// ── 히트맵 (CLAUDE.md 1절: 컬러 도메인 [100,280] 고정) ─────────────────────
+// ── 히트맵 (CLAUDE.md 1절: EC 컬러 도메인 [100,280] 고정) ───────────────────
+// 정상 구간 6단계 팔레트 — EC·TDS 히트맵이 공유한다(의미는 "정상→주의" 단계이지 절대값이 아님).
+const HEATMAP_PALETTE = [
+  [ 26, 152, 130],
+  [102, 194, 165],
+  [171, 221, 164],
+  [255, 255, 191],
+  [253, 174,  97],
+  [244, 109,  67]
+];
+const HEATMAP_OVER_COLOR = [123, 31, 122];   // 정상 도메인 초과 = 짙은 자주 (전용 경고색)
+const HEATMAP_DANGER_COLOR = [74, 12, 85];   // 위험 임계값 초과 = 더 짙은 자주
+
 export const HEATMAP = {
-  colorDomain: [100, 280],
-  cellSize: 45,            // m — 목업 측점 간격(약 45~60 m)에 맞춘 값
-  elevationScale: 0.35,    // 높이 = EC × 이 계수 (원점을 지나는 선형 → 값 비례)
-  // 정상 구간 [100,280] 6단계
-  colorRange: [
-    [ 26, 152, 130],
-    [102, 194, 165],
-    [171, 221, 164],
-    [255, 255, 191],
-    [253, 174,  97],
-    [244, 109,  67]
-  ],
-  overColor: [123, 31, 122],   // 280 초과 = 짙은 자주 (전용 경고색)
-  dangerColor: [ 74, 12, 85]   // 700 초과 = 더 짙은 자주
+  cellSize: 45,   // m — 목업 측점 간격(약 45~60 m)에 맞춘 값
+  // metric 별 설정 (TDS 히트맵 추가, 사용자 확정 2026-08-16 — 값은 CLAUDE.md 1절 표를 그대로 재사용)
+  metrics: {
+    ec: {
+      label: 'EC',
+      unit: 'µS/cm',
+      colorDomain: [100, 280],     // CLAUDE.md 1절: EC 정상 범위, 고정
+      dangerMin: 700,              // CLAUDE.md 1절: EC 위험 임계값
+      elevationScale: 0.35,        // 높이 = 값 × 이 계수 (원점을 지나는 선형 → 값 비례)
+      elevMax: 800,
+      colorRange: HEATMAP_PALETTE,
+      overColor: HEATMAP_OVER_COLOR,
+      dangerColor: HEATMAP_DANGER_COLOR
+    },
+    tds: {
+      label: 'TDS',
+      unit: 'ppm',
+      colorDomain: [50, 140],      // CLAUDE.md 1절: TDS 정상 범위, 고정
+      dangerMin: 350,              // CLAUDE.md 1절: TDS 위험 임계값
+      elevationScale: 0.35,
+      elevMax: 400,                // TDS ≈ EC × 0.5 (CLAUDE.md 4절 실측 검증) — EC 대비 절반 스케일
+      colorRange: HEATMAP_PALETTE,
+      overColor: HEATMAP_OVER_COLOR,
+      dangerColor: HEATMAP_DANGER_COLOR
+    }
+  }
 };
 
 // ── 지도 (VWorld 위성 타일 / 키 없으면 OSM 폴백) ───────────────────────────
@@ -122,9 +146,9 @@ export function classify(metric, value) {
 }
 
 /** 레코드 하나가 히트맵 집계에 쓸 수 있는지 (CLAUDE.md 6절: fault 는 집계 제외) */
-export function isAggregatable(rec) {
+export function isAggregatable(rec, metric = 'ec') {
   return rec.status === 'ok' &&
-    Number.isFinite(rec.ec) &&
+    Number.isFinite(rec[metric]) &&
     Number.isFinite(rec.lat) &&
     Number.isFinite(rec.lon);
 }

@@ -19,7 +19,7 @@ EC/TDS 일체형 센서 (수중 프로브, 보트에서 케이블로 직접 하�
   ├─ raspi/feed.py  : 1초마다 센서 읽기 → {seq,ec,tds,temp} 를 /ws/ingest 로 송신 (가공 금지)
   ├─ server/        : FastAPI — 수심 추정(시간 적분), GPS 병합, SQLite 저장, 브로드캐스트, CSV/XLSX
   ▼  WebSocket(실시간) + REST(누적 조회·내보내기)
-대시보드 (브라우저, Vite + 순수 JS + deck.gl + MapLibre + Chart.js)
+대시보드 (브라우저, Vite + React + deck.gl + MapLibre + Chart.js)
 
 윈치: 별도 ESP32가 모터를 시간 기반으로 제어 (30초 = 0.5 m). 대시보드/서버와 배선 없음.
       서버는 같은 상수로 병행 적분 — 조작자가 실제 윈치 시작과 동시에 대시보드 명령 입력.
@@ -32,6 +32,8 @@ EC/TDS 일체형 센서 (수중 프로브, 보트에서 케이블로 직접 하�
 - 오케스트레이터 확정: 목업 기본 비활성(UWD_MOCK=0), 미장착 센서 판정 제외(UWD_SENSORS), fault 원값 유지·NaN만 null
 - 2026-08-16: **프론트엔드 Vite+React로 전환** (기존 "순수 JS, React 금지" 결정 번복). 가독성 개선 목적,
   ws-client.js 재연결 로직·config.js 상수는 그대로 이식, 상태관리 라이브러리는 도입하지 않음(CLAUDE.md 3절)
+- 2026-08-16: **TDS 3D 히트맵 추가** — EC/TDS 표시 항목 탭 전환. 컬러 도메인 [50,140] 고정(TDS 정상
+  범위 재사용), 위험 레코드 요약 한 줄 추가(캡스톤 dashboard.html 히트맵 패널에서 아이디어만 차용)
 
 ## 3. 데이터 흐름 (요약 — 정본은 CLAUDE.md 1절)
 
@@ -55,9 +57,9 @@ server/              FastAPI 백엔드 (라즈베리파이에서 구동)
   store.py           SQLite (5초 배치 커밋, 구스키마 감지 시 기동 중단)
   mock_esp32.py      개발용 목업 (UWD_MOCK=1일 때만)
   config.py          상수·환경변수 (UWD_MOCK, UWD_SENSORS, UWD_DB 등)
-dashboard/           프론트엔드 (Vite + 순수 JS)
+dashboard/           프론트엔드 (Vite + React)
   src/ws-client.js   서버 연결 (재연결 지수 백오프 최대 10초 — 수정 금지)
-  src/panels/        gauges(EC·TDS·수온), depth, charts, map(위성+궤적), heatmap(EC, 깊이 탭 3개)
+  src/panels/        gauges(EC·TDS·수온), depth, charts, map(위성+궤적), heatmap(EC/TDS 탭, 깊이 탭 3개)
   src/mock-stream.js 1단계 폴백 목업 (미사용, 보존)
 세종 용암저수지 *.xlsx  실측 수질 데이터 76건 (2010~2026) — 임계값·목업 범위의 근거
 EC센서 유저 메뉴얼.pdf  DEC890 매뉴얼 (실센서와 불일치 — 참고용)

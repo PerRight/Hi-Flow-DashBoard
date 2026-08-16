@@ -9,7 +9,7 @@ const HeatmapPanel = forwardRef(function HeatmapPanel({ batchSeq, recordsRef }, 
   const panelRef = useRef(null);
 
   useEffect(() => {
-    panelRef.current = createHeatmapPanel('heatmap', 'depth-tabs', 'heat-legend', 'heat-stats');
+    panelRef.current = createHeatmapPanel('heatmap', 'depth-tabs', 'heat-legend', 'heat-stats', 'heat-metric-tabs');
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -22,7 +22,10 @@ const HeatmapPanel = forwardRef(function HeatmapPanel({ batchSeq, recordsRef }, 
 
   return (
     <>
-      <div className="depth-tabs" id="depth-tabs" />
+      <div className="hm-toolbar">
+        <div className="depth-tabs" id="heat-metric-tabs" />
+        <div className="depth-tabs" id="depth-tabs" />
+      </div>
       <div className="panel-body no-pad heat-wrap">
         <div id="heatmap" className="map-canvas" />
         <div className="heat-legend" id="heat-legend" />
