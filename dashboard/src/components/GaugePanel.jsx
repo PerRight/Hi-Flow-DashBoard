@@ -1,10 +1,13 @@
 /**
- * GaugePanel.jsx — panels/gauges.js 를 감싸는 얇은 컴포넌트 (1초 갱신).
+ * GaugePanel.jsx — panels/gauges.js(240° 아크 게이지)를 감싸는 얇은 컴포넌트 (1초 갱신).
+ * 게이지 형태는 기존 디자인을 그대로 채택하고 색만 라이트 테마로 바꿨다
+ * (UI_REQUIREMENTS §3.7, 사용자 확정 2026-08-26).
  */
 import { useEffect, useRef } from 'react';
 import { createGaugePanel } from '../panels/gauges.js';
+import { HEATMAP_3D } from '../config.js';
 
-export default function GaugePanel({ fastSeq, liveTickRef, stale }) {
+export default function GaugePanel({ fastSeq, liveTickRef, stale, metric, lastSeenText }) {
   const containerRef = useRef(null);
   const panelRef = useRef(null);
 
@@ -20,10 +23,22 @@ export default function GaugePanel({ fastSeq, liveTickRef, stale }) {
     panelRef.current.setStale(stale);
   }, [stale]);
 
+  // 좌측 레일의 표시 항목 선택을 게이지에도 반영한다(선택 소유권은 레일 — §4.1).
+  useEffect(() => {
+    panelRef.current.setSelected(metric);
+  }, [metric]);
+
   return (
-    <section className="panel panel-gauges">
-      <h2 className="panel-title">센서 실측값 <span className="hint">1초 갱신</span></h2>
-      <div className="panel-body gauge-grid" ref={containerRef} />
+    <section className={`panel a-sensor${stale ? ' is-stale-panel' : ''}`}>
+      <h2 className="panel-title">
+        센서 실측값 <span className="hint">1초 갱신</span>
+      </h2>
+      <div className="panel-body">
+        <div className="gauge-grid" ref={containerRef} />
+        <p className="metric-note">
+          {lastSeenText} · 표시 항목({HEATMAP_3D.metrics[metric].label}) 강조 중
+        </p>
+      </div>
     </section>
   );
 }

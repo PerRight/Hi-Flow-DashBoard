@@ -1,7 +1,7 @@
 /**
  * DepthPanel.jsx — panels/depth.js 를 감싸는 얇은 컴포넌트.
  * 실제 렌더링·상태는 전부 depth.js 가 갖고 있다(전체 리렌더 금지 원칙 유지).
- * 이 컴포넌트는 "언제 마운트하고 언제 update()를 호출할지"만 결정한다.
+ * 수직 물기둥 게이지는 기존 디자인을 그대로 채택, 색만 라이트 테마 (UI_REQUIREMENTS §3.8).
  */
 import { useEffect, useRef } from 'react';
 import { createDepthPanel } from '../panels/depth.js';
@@ -28,8 +28,10 @@ export default function DepthPanel({ depthSeq, depthMsgRef, winchMeta, stale, on
   }, [stale]);
 
   return (
-    <section className="panel panel-depth" id="panel-depth">
-      <h2 className="panel-title">현재 수심</h2>
+    <section className="panel a-depth" id="panel-depth">
+      <h2 className="panel-title">
+        현재 수심 <span className="hint">추정 · 윈치 시간 적분</span>
+      </h2>
       <div className="panel-body" ref={containerRef} />
     </section>
   );

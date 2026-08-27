@@ -1,272 +1,219 @@
-:root {
-  --bg: #0e1418;
-  --panel: #151d23;
-  --panel-2: #1b252d;
-  --line: #26333d;
-  --text: #dbe6ee;
-  --text-dim: #8598a6;
-  --accent: #38bdf8;
-  --ok: #34d399;
-  --caution: #fbbf24;
-  --danger: #f87171;
-  --fault: #a855f7;
-  --stale: #64748b;
+/**
+ * style.css — 라이트 테마 리디자인 (사용자 확정 2026-08-26).
+ *
+ * 기준: design/UI_REQUIREMENTS.md · design/ui-wireframe.html
+ *   · 캔버스 #F2F2F2 / 패널은 흰 카드 / 헤더 바만 #96D0FF
+ *   · 파란 배경 위 텍스트는 #0F2B3D (흰 글씨 금지)
+ *   · 1920 기준 4열: 레일 240 | 히트맵 | 수심 | 센서
+ * 클래스 이름은 panels/depth.js·gauges.js 가 만드는 것을 그대로 쓴다 —
+ * JS 마크업을 다시 쓰지 않고 색만 라이트로 치환한다(CLAUDE.md 4절 정밀 수정).
+ */
+
+:root{
+  --brand-50:#F2F9FF; --brand-100:#DCEFFF; --brand-200:#BCE0FF; --brand-300:#96D0FF;
+  --brand-400:#6DB4EC; --brand-500:#3F8FCB; --brand-600:#2A6A9C; --brand-700:#12405F;
+  --bg-app:#F2F2F2; --card:#FFFFFF; --sunken:#F7F8F9; --border:#E1E4E6;
+  --t-strong:#0F2B3D; --t-body:#294455; --t-dim:#5D7A8C;
+  --ok:#0E8F5F; --ok-bg:#E6F6EF; --caution:#B26A00; --caution-bg:#FDF1DF;
+  --danger:#C62828; --danger-bg:#FCEAEA; --fault:#7B1F7A; --fault-bg:#F5E9F5;
+  --stale:#7A8C99; --stale-bg:#EDF1F4;
+  --probe:#FFD400;                     /* 지금 장비가 있는 위치 — 수심 프로브·보트 마커 공용 */
+  --r-card:12px; --r-ctl:8px;
+  --sh:0 1px 2px rgba(15,43,61,.05), 0 3px 10px rgba(15,43,61,.07);
 }
 
-* { box-sizing: border-box; }
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0; background:var(--bg-app); color:var(--t-body); min-height:100vh;
+  font-family:Pretendard,"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  font-size:14px;
+}
+#root{display:flex; flex-direction:column}
+.num{font-variant-numeric:tabular-nums}
 
-html, body {
-  margin: 0;
-  height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
-  font-size: 14px;
+/* ── 헤더 ─────────────────────────────────────────────────────────────── */
+header.topbar{
+  height:64px; flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:0 24px; background:var(--brand-300); border-bottom:1px solid var(--brand-200);
+}
+.brand{display:flex; align-items:baseline; gap:10px}
+.brand-title{font-size:18px; font-weight:700; color:var(--brand-700); letter-spacing:-.02em}
+.brand-site{font-size:12px; color:#3A5B70}
+.topbar-right{display:flex; align-items:center; gap:14px}
+.field{display:flex; align-items:center; gap:8px}
+.field-label{font-size:12px; color:#2C4E63}
+select{
+  font:inherit; font-size:13px; color:var(--t-strong); background:#fff;
+  border:1px solid var(--brand-500); border-radius:var(--r-ctl); padding:6px 10px; width:240px;
+}
+.link-status{
+  display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px;
+  font-size:12px; font-weight:700; border:1px solid transparent;
+}
+.link-status .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.link-ok{color:var(--ok);background:var(--ok-bg);border-color:#B7E3D0}
+.link-stale{color:var(--danger);background:var(--danger-bg);border-color:#F1BEBE;
+  animation:blink 1s steps(2,start) infinite}
+@keyframes blink{50%{opacity:.4}}
+.clock{font-size:13px;color:#2C4E63;font-variant-numeric:tabular-nums}
+
+/* stale 배너 — 마지막 수신값임을 화면 최상단에 명시한다(CLAUDE.md 6절) */
+.banner{
+  flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:10px 24px;
+  background:var(--danger-bg); color:var(--danger); font-weight:700; font-size:13px;
+  border-bottom:1px solid #F1BEBE;
 }
 
-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+/* ── 그리드 ───────────────────────────────────────────────────────────── */
+main.layout{
+  flex:1 1 auto; display:grid; gap:16px; padding:16px; min-height:0;
+  grid-template-columns:240px 1fr 1.02fr 1.02fr;
+  grid-template-rows:1.16fr 1fr;
+  grid-template-areas:"rail heat depth sensor" "rail heat gps gps";
 }
+.a-rail{grid-area:rail;display:flex;flex-direction:column;gap:16px;min-height:0}
+.a-heat{grid-area:heat}.a-depth{grid-area:depth}.a-sensor{grid-area:sensor}.a-gps{grid-area:gps}
 
-/* ── 상단바 ───────────────────────────────────────────── */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 18px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  flex: 0 0 auto;
+.panel{
+  background:var(--card); border:1px solid var(--border); border-radius:var(--r-card);
+  box-shadow:var(--sh); display:flex; flex-direction:column; min-height:0; overflow:hidden;
 }
-.brand { display: flex; align-items: baseline; gap: 10px; }
-.brand-title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
-.brand-site { font-size: 12px; color: var(--text-dim); }
-.topbar-right { display: flex; align-items: center; gap: 14px; }
-
-.field { display: flex; align-items: center; gap: 6px; }
-.field-label { font-size: 12px; color: var(--text-dim); }
-select {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 8px;
-  font-size: 13px;
+.panel-title{
+  flex:0 0 auto; height:38px; margin:0; display:flex; align-items:center;
+  justify-content:space-between; gap:8px; padding:0 12px;
+  font-size:14px; font-weight:700; color:var(--t-strong);
+  background:var(--sunken); border-bottom:1px solid var(--border);
 }
+.panel-title .hint{font-size:11px;font-weight:400;color:var(--t-dim)}
+.panel-body{flex:1 1 auto; padding:16px; min-height:0; display:flex; flex-direction:column; gap:12px}
+.panel-body.no-pad{padding:0; gap:0}
 
-.link-status {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: 999px;
-  font-size: 12px; font-weight: 600;
-  border: 1px solid transparent;
+/* ── 좌측 레일 ────────────────────────────────────────────────────────── */
+.tabs{display:flex;flex-direction:column;gap:8px}
+.tab{
+  min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:0 12px; border:1px solid var(--border); border-radius:var(--r-ctl);
+  background:var(--sunken); color:var(--t-body); font:inherit; font-size:13px; font-weight:500;
+  cursor:pointer; border-left:3px solid transparent; text-align:left; width:100%;
 }
-.link-status .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.link-ok    { color: var(--ok);    border-color: #1f5c47; background: #10241d; }
-.link-stale { color: var(--danger); border-color: #6b2626; background: #2a1414;
-              animation: blink 1s steps(2, start) infinite; }
-@keyframes blink { 50% { opacity: 0.45; } }
-
-.clock { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-dim); }
-
-/* ── 레이아웃 ─────────────────────────────────────────── */
-.layout {
-  flex: 1 1 auto;
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  grid-template-columns: 300px minmax(0, 1fr) minmax(0, 1.05fr);
-  grid-template-rows: minmax(320px, 1fr) minmax(280px, 0.85fr);
-  grid-template-areas:
-    "depth  map   heat"
-    "gauges chart heat";
-  min-height: 0;
+.tab .cnt{font-size:11px;color:var(--t-dim);font-variant-numeric:tabular-nums}
+.tab.zero{opacity:.65}
+.tab.zero .cnt{color:var(--stale)}
+.tab[aria-selected="true"]{
+  background:var(--brand-100); border-color:var(--brand-500); border-left-color:var(--brand-500);
+  color:var(--brand-700); font-weight:700;
 }
-.panel-depth  { grid-area: depth; }
-.panel-gauges { grid-area: gauges; }
-.panel-map    { grid-area: map; }
-.panel-chart  { grid-area: chart; }
-.panel-heat   { grid-area: heat; }
-
-@media (max-width: 1250px) {
-  .layout {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto auto auto;
-    grid-template-areas:
-      "depth  gauges"
-      "map    map"
-      "chart  chart"
-      "heat   heat";
-  }
-  .panel-map, .panel-heat { min-height: 420px; }
+.btn{
+  min-height:44px; width:100%; border:0; border-radius:var(--r-ctl); cursor:pointer;
+  font:inherit; font-size:13px; font-weight:700; background:var(--brand-500); color:#fff;
+  display:flex; align-items:center; justify-content:center; text-decoration:none;
 }
+.btn.sec{background:var(--sunken);color:var(--t-body);border:1px solid var(--border)}
+.divider{height:1px;background:var(--border);margin:2px 0}
+.note{font-size:12px;color:var(--t-dim);line-height:1.5;margin:0}
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
+/* ── 수심 (panels/depth.js 마크업) ────────────────────────────────────── */
+.depth-wrap{display:flex;gap:14px;flex:1 1 auto;min-height:0}
+.depth-col{flex:0 0 132px;display:flex;min-height:0}
+.depth-info{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;min-width:0}
+.hint{font-size:11px;color:var(--t-dim)}
+.depth-readout{display:flex;align-items:baseline;gap:5px}
+.depth-value{font-size:44px;font-weight:800;line-height:1;color:var(--t-strong);
+  font-variant-numeric:tabular-nums}
+.depth-unit{font-size:14px;color:var(--t-dim)}
+.state-badge{
+  align-self:flex-start;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
+  border-radius:6px;font-size:12px;font-weight:700;background:var(--sunken);
+  border:1px solid var(--border);color:var(--t-dim);
 }
-.panel-title {
-  margin: 0;
-  padding: 9px 12px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-  border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; gap: 8px;
-  flex: 0 0 auto;
+.state-DESCENDING{color:var(--brand-600);border-color:var(--brand-400)}
+.state-HOLD{color:var(--ok);border-color:#9BD8BE}
+.state-ASCENDING{color:var(--caution);border-color:#E8C48A}
+.progress-label{font-size:11px;color:var(--t-dim);margin-bottom:3px}
+.progress{height:6px;border-radius:3px;background:var(--sunken);border:1px solid var(--border);
+  overflow:hidden}
+.progress > i{display:block;height:100%;background:var(--brand-400);transition:width .4s linear}
+.winch-btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:auto}
+.winch-btns button,.mini-btn{
+  background:var(--sunken);color:var(--t-body);border:1px solid var(--border);
+  border-radius:6px;padding:10px 4px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;
 }
-.hint { font-size: 11px; font-weight: 400; color: var(--text-dim); }
-.panel-body { flex: 1 1 auto; padding: 12px; min-height: 0; overflow: hidden; }
-.panel-body.no-pad { padding: 0; }
+.winch-btns button.active,.mini-btn.active{
+  border-color:var(--brand-500);color:var(--brand-700);background:var(--brand-100)}
+.winch-btns button:disabled,.mini-btn:disabled{opacity:.4;cursor:not-allowed}
+.auto-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t-dim)}
+.auto-row .mini-btn{flex:1 1 auto;padding:8px 10px;font-size:12px}
 
-/* ── 수심 패널 ────────────────────────────────────────── */
-.depth-wrap { display: flex; gap: 14px; height: 100%; min-height: 0; }
-.depth-col { flex: 0 0 96px; display: flex; }
-.depth-info { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-
-.depth-readout { display: flex; align-items: baseline; gap: 5px; }
-.depth-value { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
-.depth-unit { font-size: 14px; color: var(--text-dim); }
-
-.state-badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  align-self: flex-start;
-  padding: 4px 10px; border-radius: 6px;
-  font-size: 12px; font-weight: 700;
-  background: var(--panel-2); border: 1px solid var(--line);
+/* ── 센서 게이지 (panels/gauges.js 마크업) ────────────────────────────── */
+.gauge-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch}
+.gauge{
+  background:var(--sunken);border:1px solid var(--border);border-radius:8px;padding:8px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;
 }
-.state-SURFACE    { color: var(--text-dim); }
-.state-DESCENDING { color: var(--accent);  border-color: #1d4f66; }
-.state-HOLD       { color: var(--ok);      border-color: #1f5c47; }
-.state-ASCENDING  { color: var(--caution); border-color: #6b551f; }
+.gauge.lv-caution{border-color:var(--caution)}
+.gauge.lv-danger{border-color:var(--danger);box-shadow:inset 0 0 0 1px var(--danger)}
+.gauge.lv-fault{border-color:var(--fault);box-shadow:inset 0 0 0 1px var(--fault)}
+.gauge.sel{outline:2px solid var(--brand-500);outline-offset:3px}
+.gauge.is-stale{opacity:.5;filter:grayscale(1)}
+.gauge-name{font-size:12px;color:var(--t-dim);font-weight:600}
+.gauge-value{font-size:22px;font-weight:800;line-height:1.15;color:var(--t-strong);
+  font-variant-numeric:tabular-nums}
+.gauge-unit{font-size:11px;color:var(--t-dim);font-weight:400}
+.gauge-flag{font-size:10px;font-weight:700;border-radius:4px;padding:1px 6px;border:1px solid currentColor}
+.flag-normal{color:var(--ok)}.flag-caution{color:var(--caution)}.flag-danger{color:var(--danger)}
+.flag-fault{color:var(--fault)}.flag-stale{color:var(--stale)}
+.metric-note{font-size:11px;color:var(--t-dim);margin:auto 0 0}
 
-.progress {
-  height: 6px; border-radius: 3px; background: var(--panel-2);
-  overflow: hidden; border: 1px solid var(--line);
+/* ── 3D 히트맵 (산점) ─────────────────────────────────────────────────── */
+.heat-wrap{flex:1 1 auto;position:relative;display:flex;min-height:0}
+.heat-empty{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  border-radius:8px;background:var(--sunken);border:1px dashed var(--border);
+  color:var(--t-dim);font-size:13px;font-weight:600;text-align:center;padding:0 16px;
 }
-.progress > i { display: block; height: 100%; background: var(--accent); transition: width 0.4s linear; }
-.progress-label { font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+.heat3d{flex:1 1 auto;min-height:0;border-radius:8px;background:#FCFCFB;
+  border:1px solid var(--border);cursor:grab;touch-action:none}
+.heat3d.drag{cursor:grabbing}
+.heat3d text{font-family:inherit}
+.hm-tip{
+  position:absolute;pointer-events:none;z-index:5;
+  background:rgba(255,255,255,.97);border:1px solid var(--border);border-radius:8px;
+  padding:7px 10px;font-size:11px;line-height:1.6;color:var(--t-body);
+  box-shadow:var(--sh);white-space:nowrap;
+}
+.hm-tip b{color:var(--t-strong);font-variant-numeric:tabular-nums}
+.hm-hint{position:absolute;right:10px;top:8px;font-size:10px;color:var(--t-dim);pointer-events:none}
+.legend{flex:0 0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ramp{height:12px;width:180px;border-radius:6px;
+  background:linear-gradient(90deg,#cde2fb,#9ec5f4,#6da7ec,#3987e5,#256abf,#184f95,#0d366b)}
+.sw{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t-dim);
+  font-variant-numeric:tabular-nums}
+.sw b{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw b.dia{border-radius:2px;transform:rotate(45deg);width:10px;height:10px}
 
-.winch-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-.winch-btns button, .mini-btn {
-  background: var(--panel-2); color: var(--text);
-  border: 1px solid var(--line); border-radius: 6px;
-  padding: 8px 4px; font-size: 13px; font-weight: 700; cursor: pointer;
-  font-family: inherit;
-}
-.winch-btns button:hover, .mini-btn:hover { background: #22303a; }
-.winch-btns button.active { border-color: var(--accent); color: var(--accent); background: #0f2b38; }
-.auto-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
-.auto-row button { flex: 1 1 auto; }
+/* ── 지도 ─────────────────────────────────────────────────────────────── */
+.map-canvas{flex:1 1 auto;position:relative;min-height:0;height:100%;width:100%;
+  border-radius:0 0 var(--r-card) var(--r-card);overflow:hidden;background:#3D4A2E}
 
-/* ── 게이지 ───────────────────────────────────────────── */
-.gauge-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  align-items: stretch;
+/* ── 하단 상태바 ──────────────────────────────────────────────────────── */
+footer.statusbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:8px 24px;
+  background:var(--card);border-top:1px solid var(--border);
+  font-size:11px;color:var(--t-dim);
 }
-.gauge {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  min-width: 0;
-}
-.gauge.is-stale { opacity: 0.45; filter: grayscale(1); }
-.gauge.lv-caution { border-color: var(--caution); }
-.gauge.lv-danger  { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
-.gauge.lv-fault   { border-color: var(--fault);  box-shadow: inset 0 0 0 1px var(--fault); }
-.gauge-name { font-size: 12px; color: var(--text-dim); font-weight: 600; }
-.gauge-value { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
-.gauge-unit { font-size: 11px; color: var(--text-dim); }
-.gauge-flag {
-  font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 6px;
-  border: 1px solid currentColor;
-}
-.flag-normal  { color: var(--ok); }
-.flag-caution { color: var(--caution); }
-.flag-danger  { color: var(--danger); }
-.flag-fault   { color: var(--fault); }
-.flag-stale   { color: var(--stale); }
+footer.statusbar .spacer{flex:1 1 auto}
 
-/* ── 차트 ─────────────────────────────────────────────── */
-.chart-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  min-height: 0;
-}
-.chart-cell { position: relative; min-width: 0; min-height: 0; height: 100%; }
-/* 캔버스를 절대배치해 두면 Chart.js 리사이즈가 부모 높이를 되밀어 올리는 루프를 막는다 */
-.chart-cell canvas { position: absolute; left: 0; top: 0; }
+/* stale: 수심·센서 패널은 회색 처리해 "지금 값이 아님"을 드러낸다 */
+.is-stale-panel .panel-body{opacity:.42;filter:grayscale(1)}
 
-/* ── 지도 ─────────────────────────────────────────────── */
-.map-canvas { width: 100%; height: 100%; min-height: 220px; }
-.heat-wrap { position: relative; }
-
-.hm-toolbar {
-  display: flex; justify-content: space-between; align-items: center;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+@media (max-width:1599px){
+  main.layout{grid-template-columns:200px 1fr 1fr;grid-template-rows:auto auto auto;
+    grid-template-areas:"rail heat depth" "rail heat sensor" "rail gps gps"}
 }
-.hm-toolbar .depth-tabs { border-bottom: none; }
-
-.depth-tabs {
-  display: flex; gap: 4px; padding: 6px 10px;
-  border-bottom: 1px solid var(--line);
-  flex: 0 0 auto;
-  background: var(--panel);
+@media (max-width:1199px){
+  main.layout{grid-template-columns:1fr;grid-template-rows:none;
+    grid-template-areas:"rail" "heat" "depth" "sensor" "gps"}
+  .a-rail{flex-direction:row}.a-rail .panel{flex:1 1 0}
+  .a-heat,.a-gps{min-height:420px}
 }
-.depth-tabs button {
-  background: var(--panel-2); color: var(--text-dim);
-  border: 1px solid var(--line); border-radius: 6px;
-  padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
-  font-family: inherit;
-}
-.depth-tabs button.active { color: var(--accent); border-color: var(--accent); background: #0f2b38; }
-
-.heat-legend {
-  position: absolute; left: 10px; bottom: 10px; z-index: 5;
-  background: rgba(14, 20, 24, 0.86);
-  border: 1px solid var(--line); border-radius: 8px;
-  padding: 8px 10px; font-size: 11px; pointer-events: none;
-}
-.legend-title { color: var(--text-dim); margin-bottom: 5px; font-weight: 700; }
-.legend-bar { display: flex; height: 10px; border-radius: 2px; overflow: hidden; width: 168px; }
-.legend-bar > i { flex: 1 1 auto; }
-.legend-scale { display: flex; justify-content: space-between; color: var(--text-dim); margin-top: 3px; }
-.legend-extra { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-.legend-swatch { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
-
-.heat-stats {
-  position: absolute; right: 10px; top: 10px; z-index: 5;
-  background: rgba(14, 20, 24, 0.86);
-  border: 1px solid var(--line); border-radius: 8px;
-  padding: 7px 10px; font-size: 11px; color: var(--text-dim);
-  pointer-events: none; line-height: 1.6;
-}
-.heat-stats b { color: var(--text); font-variant-numeric: tabular-nums; }
-
-/* ── 하단바 ───────────────────────────────────────────── */
-.statusbar {
-  flex: 0 0 auto;
-  display: flex; align-items: center; gap: 12px;
-  padding: 7px 18px;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
-  font-size: 12px; color: var(--text-dim);
-}
-.statusbar .spacer { flex: 1 1 auto; }
-.mini-btn { padding: 4px 10px; font-size: 12px; }
-
-.maplibregl-ctrl-attrib { font-size: 10px; }

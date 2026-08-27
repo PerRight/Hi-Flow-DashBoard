@@ -13,7 +13,7 @@ import { DEPTH_LEVELS, HOLD_SECONDS } from '../config.js';
 
 const MAX_DEPTH = DEPTH_LEVELS[DEPTH_LEVELS.length - 1];
 const BAR_H = 210;
-const BAR_TOP = 14;
+const BAR_TOP = 28;   // 프로브가 '수면' 라벨을 덮지 않게 (UI_REQUIREMENTS §3.8)
 
 const STATE_LABEL = {
   SURFACE: '수면 대기',
@@ -33,19 +33,20 @@ export function createDepthPanel(root, onCommand) {
              preserveAspectRatio="xMidYMid meet" aria-label="수심 게이지">
           <defs>
             <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#164e63"/>
-              <stop offset="100%" stop-color="#082f3d"/>
+              <stop offset="0%"   stop-color="#96D0FF"/>
+              <stop offset="55%"  stop-color="#3F8FCB"/>
+              <stop offset="100%" stop-color="#12405F"/>
             </linearGradient>
           </defs>
           <rect x="26" y="${BAR_TOP}" width="30" height="${BAR_H}" rx="4"
-                fill="url(#waterGrad)" stroke="#26333d"/>
+                fill="url(#waterGrad)" stroke="#7FB6DE"/>
           <g id="depth-ticks"></g>
           <line id="probe-line" x1="41" y1="${BAR_TOP}" x2="41" y2="${BAR_TOP}"
-                stroke="#38bdf8" stroke-width="2"/>
+                stroke="#FFD400" stroke-width="2"/>
           <g id="probe">
-            <rect x="33" y="-7" width="16" height="14" rx="3" fill="#38bdf8"/>
+            <rect x="33" y="-7" width="16" height="14" rx="3" fill="#FFD400" stroke="#1B1B1B" stroke-width="1.5"/>
           </g>
-          <text x="41" y="${BAR_TOP - 4}" fill="#8598a6" font-size="9"
+          <text x="41" y="${BAR_TOP - 14}" fill="#12405F" font-size="9" font-weight="700"
                 text-anchor="middle">수면</text>
         </svg>
       </div>
@@ -75,6 +76,7 @@ export function createDepthPanel(root, onCommand) {
           <button class="mini-btn" data-cmd="auto" id="btn-auto">자동 순환</button>
           <span id="auto-flag">자동</span>
         </div>
+        <p class="hint">실제 윈치 조작과 동시에 눌러야 수심 추정이 맞습니다. <b>하강 0.5 m / 30초.</b></p>
       </div>
     </div>`;
 
@@ -83,8 +85,8 @@ export function createDepthPanel(root, onCommand) {
   let tickSvg = '';
   for (const d of DEPTH_LEVELS) {
     const y = BAR_TOP + (d / MAX_DEPTH) * BAR_H;
-    tickSvg += `<line x1="22" y1="${y}" x2="60" y2="${y}" stroke="#3b4c59" stroke-dasharray="3 3"/>` +
-               `<text x="62" y="${y + 3}" fill="#8598a6" font-size="9">${d.toFixed(1)}</text>`;
+    tickSvg += `<line x1="22" y1="${y}" x2="60" y2="${y}" stroke="#C9D6DF" stroke-dasharray="3 3"/>` +
+               `<text x="62" y="${y + 3}" fill="#5D7A8C" font-size="9">${d.toFixed(1)}</text>`;
   }
   ticks.innerHTML = tickSvg;
 
@@ -170,7 +172,7 @@ export function createDepthPanel(root, onCommand) {
 
   /** 연결 끊김 시: 표시 중인 수심이 실제와 다를 수 있으므로 회색 처리 */
   function setStale(isStale) {
-    root.style.opacity = isStale ? '0.5' : '1';
+    root.style.opacity = isStale ? '0.42' : '1';
     root.style.filter = isStale ? 'grayscale(1)' : 'none';
     if (isStale) el.target.textContent = '연결 끊김 — 수심 미확인';
     else paint();

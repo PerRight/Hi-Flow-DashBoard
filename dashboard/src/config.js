@@ -75,44 +75,37 @@ export const SERVER = {
   ws: `${_secure ? 'wss' : 'ws'}://${SERVER_HOST}`
 };
 
-// ── 히트맵 (CLAUDE.md 1절: EC 컬러 도메인 [100,280] 고정) ───────────────────
-// 정상 구간 6단계 팔레트 — EC·TDS 히트맵이 공유한다(의미는 "정상→주의" 단계이지 절대값이 아님).
-const HEATMAP_PALETTE = [
-  [ 26, 152, 130],
-  [102, 194, 165],
-  [171, 221, 164],
-  [255, 255, 191],
-  [253, 174,  97],
-  [244, 109,  67]
-];
-const HEATMAP_OVER_COLOR = [123, 31, 122];   // 정상 도메인 초과 = 짙은 자주 (전용 경고색)
-const HEATMAP_DANGER_COLOR = [74, 12, 85];   // 위험 임계값 초과 = 더 짙은 자주
+// ── 3D 히트맵 (CLAUDE.md 1절: 컬러 도메인·임계값 고정) ─────────────────
+// 표현 형식은 (X,Y,수심) 3차원 산점으로 확정 (사용자 확정 2026-08-26,
+// design/UI_REQUIREMENTS.md §3.10). deck.gl GridLayer 평면 슬라이스를 대체한다.
+// 바뀐 것은 "그리는 방식"이고, 임계값과 컬러 도메인은 1절 표 그대로다.
 
-export const HEATMAP = {
-  cellSize: 45,   // m — 목업 측점 간격(약 45~60 m)에 맞춘 값
-  // metric 별 설정 (TDS 히트맵 추가, 사용자 확정 2026-08-16 — 값은 CLAUDE.md 1절 표를 그대로 재사용)
+// 파랑 단일 순차 램프 13단계 — 정상 도메인 안의 값에만 쓴다.
+// 도메인을 넘으면 램프를 벗어나 전용 경고색 + 다이아몬드로 형태까지 바꾼다
+// (색만으로 구분하지 않는다 — 색각 이상 대응, UI_REQUIREMENTS §7).
+const BLUE_RAMP = [
+  '#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5',
+  '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'
+];
+
+export const HEATMAP_3D = {
+  ramp: BLUE_RAMP,
   metrics: {
     ec: {
       label: 'EC',
       unit: 'µS/cm',
-      colorDomain: [100, 280],     // CLAUDE.md 1절: EC 정상 범위, 고정
-      dangerMin: 700,              // CLAUDE.md 1절: EC 위험 임계값
-      elevationScale: 0.35,        // 높이 = 값 × 이 계수 (원점을 지나는 선형 → 값 비례)
-      elevMax: 800,
-      colorRange: HEATMAP_PALETTE,
-      overColor: HEATMAP_OVER_COLOR,
-      dangerColor: HEATMAP_DANGER_COLOR
+      colorDomain: [100, 280],   // CLAUDE.md 1절: EC 정상 범위, 고정
+      dangerMin: 700,            // CLAUDE.md 1절: EC 위험 임계값
+      overColor: '#B26A00',      // 주의(도메인 초과)
+      dangerColor: '#C62828'     // 위험
     },
     tds: {
       label: 'TDS',
       unit: 'ppm',
-      colorDomain: [50, 140],      // CLAUDE.md 1절: TDS 정상 범위, 고정
-      dangerMin: 350,              // CLAUDE.md 1절: TDS 위험 임계값
-      elevationScale: 0.35,
-      elevMax: 400,                // TDS ≈ EC × 0.5 (CLAUDE.md 4절 실측 검증) — EC 대비 절반 스케일
-      colorRange: HEATMAP_PALETTE,
-      overColor: HEATMAP_OVER_COLOR,
-      dangerColor: HEATMAP_DANGER_COLOR
+      colorDomain: [50, 140],    // CLAUDE.md 1절: TDS 정상 범위, 고정
+      dangerMin: 350,            // CLAUDE.md 1절: TDS 위험 임계값
+      overColor: '#B26A00',
+      dangerColor: '#C62828'
     }
   }
 };

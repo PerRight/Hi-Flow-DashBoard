@@ -24,9 +24,9 @@ const GAUGE_SCALE = {
 
 // 눈금 위 색 구간: [시작, 끝, 색]
 const GAUGE_ZONES = {
-  temp: [[0, 35, '#34d399']],
-  ec: [[0, 100, '#fbbf24'], [100, 280, '#34d399'], [280, 700, '#fbbf24'], [700, 800, '#f87171']],
-  tds: [[0, 50, '#fbbf24'], [50, 140, '#34d399'], [140, 350, '#fbbf24'], [350, 400, '#f87171']]
+  temp: [[0, 35, '#0E8F5F']],
+  ec: [[0, 100, '#B26A00'], [100, 280, '#0E8F5F'], [280, 700, '#B26A00'], [700, 800, '#C62828']],
+  tds: [[0, 50, '#B26A00'], [50, 140, '#0E8F5F'], [140, 350, '#B26A00'], [350, 400, '#C62828']]
 };
 
 const R = 42, CX = 50, CY = 50;
@@ -52,16 +52,16 @@ function gaugeMarkup(metric, name, unit) {
   const zones = GAUGE_ZONES[metric]
     .map(([a, b, c]) =>
       `<path d="${arcPath(valueToDeg(metric, a), valueToDeg(metric, b))}"
-             stroke="${c}" stroke-width="7" fill="none" opacity="0.35" stroke-linecap="butt"/>`)
+             stroke="${c}" stroke-width="7" fill="none" opacity="0.5" stroke-linecap="butt"/>`)
     .join('');
   return `
     <div class="gauge" data-metric="${metric}">
       <div class="gauge-name">${name}</div>
       <svg viewBox="0 0 100 78" width="100%" style="max-height:104px">
-        <path d="${arcPath(START, START + SWEEP)}" stroke="#26333d" stroke-width="7" fill="none"/>
+        <path d="${arcPath(START, START + SWEEP)}" stroke="#E1E4E6" stroke-width="7" fill="none"/>
         ${zones}
-        <path class="g-needle" d="" stroke="#dbe6ee" stroke-width="3" fill="none" stroke-linecap="round"/>
-        <circle cx="${CX}" cy="${CY}" r="3.5" fill="#dbe6ee"/>
+        <path class="g-needle" d="" stroke="#0F2B3D" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <circle cx="${CX}" cy="${CY}" r="3.5" fill="#0F2B3D"/>
       </svg>
       <div class="gauge-value">--<span class="gauge-unit"> ${unit}</span></div>
       <div class="gauge-flag flag-normal">-</div>
@@ -128,5 +128,10 @@ export function createGaugePanel(root) {
     for (const m of ['temp', 'ec', 'tds']) paint(m);
   }
 
-  return { update, setStale };
+  /** 좌측 레일에서 고른 표시 항목을 게이지에서도 강조한다 (UI_REQUIREMENTS §4.1). */
+  function setSelected(metric) {
+    for (const m of ['temp', 'ec', 'tds']) nodes[m].box.classList.toggle('sel', m === metric);
+  }
+
+  return { update, setStale, setSelected };
 }

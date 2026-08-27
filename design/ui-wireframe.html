@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수중드론 대시보드 — UI 와이어프레임</title>
+<style>
+:root{
+  --brand-50:#F2F9FF; --brand-100:#DCEFFF; --brand-200:#BCE0FF; --brand-300:#96D0FF;
+  --brand-400:#6DB4EC; --brand-500:#3F8FCB; --brand-600:#2A6A9C; --brand-700:#12405F;
+  --bg-app:#F2F2F2; --card:#FFFFFF; --sunken:#F7F8F9; --border:#E1E4E6;
+  --t-strong:#0F2B3D; --t-body:#294455; --t-dim:#5D7A8C;
+  --ok:#0E8F5F; --ok-bg:#E6F6EF; --caution:#B26A00; --caution-bg:#FDF1DF;
+  --danger:#C62828; --danger-bg:#FCEAEA; --fault:#7B1F7A; --fault-bg:#F5E9F5;
+  --stale:#7A8C99; --stale-bg:#EDF1F4;
+  --r-card:12px; --r-ctl:8px;
+  --sh:0 1px 2px rgba(15,43,61,.05), 0 3px 10px rgba(15,43,61,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg-app); color:var(--t-body); min-height:100vh;
+  font-family:Pretendard,"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  font-size:14px; display:flex; flex-direction:column;
+}
+.num{font-variant-numeric:tabular-nums}
+
+/* 헤더 */
+header{
+  height:64px; flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:0 24px; background:var(--brand-300); border-bottom:1px solid var(--brand-200);
+}
+.brand{display:flex; align-items:baseline; gap:10px}
+.brand h1{font-size:18px; font-weight:700; color:var(--brand-700); letter-spacing:-.02em}
+.brand span{font-size:12px; color:#3A5B70}
+.hr{display:flex; align-items:center; gap:14px}
+.hr .lbl{font-size:12px; color:#2C4E63}
+select{
+  font:inherit; font-size:13px; color:var(--t-strong); background:#fff;
+  border:1px solid var(--brand-500); border-radius:var(--r-ctl); padding:6px 10px; width:240px;
+}
+.pill{
+  display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px;
+  font-size:12px; font-weight:700; border:1px solid transparent;
+}
+.pill i{width:8px;height:8px;border-radius:50%;background:currentColor;font-style:normal}
+.pill.ok{color:var(--ok);background:var(--ok-bg);border-color:#B7E3D0}
+.pill.stale{color:var(--danger);background:var(--danger-bg);border-color:#F1BEBE;animation:blink 1s steps(2,start) infinite}
+@keyframes blink{50%{opacity:.4}}
+.clock{font-size:13px;color:#2C4E63}
+
+/* 그리드 */
+main{
+  flex:1 1 auto; display:grid; gap:16px; padding:16px; min-height:0;
+  grid-template-columns:240px 1fr 1.02fr 1.02fr;
+  grid-template-rows:1.16fr 1fr;
+  grid-template-areas:"rail heat depth sensor" "rail heat gps gps";
+}
+.a-rail{grid-area:rail;display:flex;flex-direction:column;gap:16px;min-height:0}
+.a-heat{grid-area:heat}.a-depth{grid-area:depth}.a-sensor{grid-area:sensor}.a-gps{grid-area:gps}
+
+.card{
+  background:var(--card); border:1px solid var(--border); border-radius:var(--r-card);
+  box-shadow:var(--sh); display:flex; flex-direction:column; min-height:0; overflow:hidden;
+}
+.card > h2{
+  flex:0 0 auto; height:38px; display:flex; align-items:center; justify-content:space-between;
+  gap:8px; padding:0 12px; font-size:14px; font-weight:700; color:var(--t-strong);
+  background:var(--sunken); border-bottom:1px solid var(--border);
+}
+.card > h2 .sub{font-size:11px;font-weight:400;color:var(--t-dim)}
+.body{flex:1 1 auto; padding:16px; min-height:0; display:flex; flex-direction:column; gap:12px}
+
+/* 레일 */
+.tabs{display:flex;flex-direction:column;gap:8px}
+.tab{
+  min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:0 12px; border:1px solid var(--border); border-radius:var(--r-ctl);
+  background:var(--sunken); color:var(--t-body); font-size:13px; font-weight:500; cursor:pointer;
+  border-left:3px solid transparent;
+}
+.tab .cnt{font-size:11px;color:var(--t-dim)}
+.tab.zero .cnt{color:var(--stale)}
+.tab.zero{opacity:.65}
+.tab[aria-selected="true"]{
+  background:var(--brand-100); border-color:var(--brand-500); border-left-color:var(--brand-500);
+  color:var(--brand-700); font-weight:700;
+}
+.btn{
+  min-height:44px; width:100%; border:0; border-radius:var(--r-ctl); cursor:pointer;
+  font:inherit; font-size:13px; font-weight:700; background:var(--brand-500); color:#fff;
+}
+.btn.sec{background:var(--sunken);color:var(--t-body);border:1px solid var(--border)}
+.divider{height:1px;background:var(--border);margin:2px 0}
+.note{font-size:12px;color:var(--t-dim);line-height:1.5}
+
+/* 수심 — 기존 대시보드 panels/depth.js 디자인 채택, 색만 라이트 테마로 */
+.depth-wrap{display:flex;gap:14px;flex:1 1 auto;min-height:0}
+.depth-col{flex:0 0 132px;display:flex;min-height:0}
+.depth-info{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;min-width:0}
+.hint{font-size:11px;color:var(--t-dim)}
+.readout{display:flex;align-items:baseline;gap:5px}
+.readout b{font-size:44px;font-weight:800;line-height:1;color:var(--t-strong)}
+.readout span{font-size:14px;color:var(--t-dim)}
+.badge{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
+  border-radius:6px;font-size:12px;font-weight:700;background:var(--sunken);border:1px solid var(--border)}
+.badge.st-SURFACE{color:var(--t-dim)}
+.badge.st-DESCENDING{color:var(--brand-600);border-color:var(--brand-400)}
+.badge.st-HOLD{color:var(--ok);border-color:#9BD8BE}
+.badge.st-ASCENDING{color:var(--caution);border-color:#E8C48A}
+.progress-label{font-size:11px;color:var(--t-dim);margin-bottom:3px}
+.bar{height:6px;border-radius:3px;background:var(--sunken);border:1px solid var(--border);overflow:hidden}
+.bar > i{display:block;height:100%;background:var(--brand-400);transition:width .4s linear}
+.winch-btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:auto}
+.winch-btns button,.mini-btn{background:var(--sunken);color:var(--t-body);border:1px solid var(--border);
+  border-radius:6px;padding:10px 4px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.winch-btns button.active,.mini-btn.active{border-color:var(--brand-500);color:var(--brand-700);background:var(--brand-100)}
+.winch-btns button:disabled,.mini-btn:disabled{opacity:.4;cursor:not-allowed}
+.lock{display:none;align-self:flex-start;font-size:11px;font-weight:700;color:var(--brand-700);
+  background:var(--brand-100);border-radius:999px;padding:3px 10px}
+.lock.on{display:inline-block}
+.auto-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t-dim)}
+.auto-row .mini-btn{flex:1 1 auto;padding:8px 10px;font-size:12px}
+
+/* 게이지 — 기존 대시보드 panels/gauges.js 아크 게이지 채택, 색만 라이트 테마로 */
+.gauge-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch}
+.gauge{background:var(--sunken);border:1px solid var(--border);border-radius:8px;padding:8px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
+.gauge.lv-caution{border-color:var(--caution)}
+.gauge.lv-danger{border-color:var(--danger);box-shadow:inset 0 0 0 1px var(--danger)}
+.gauge.lv-fault{border-color:var(--fault);box-shadow:inset 0 0 0 1px var(--fault)}
+.gauge.sel{outline:2px solid var(--brand-500);outline-offset:3px}
+.gauge-name{font-size:12px;color:var(--t-dim);font-weight:600}
+.gauge-value{font-size:22px;font-weight:800;line-height:1.15;color:var(--t-strong)}
+.gauge-unit{font-size:11px;color:var(--t-dim);font-weight:400}
+.gauge-flag{font-size:10px;font-weight:700;border-radius:4px;padding:1px 6px;border:1px solid currentColor}
+.flag-normal{color:var(--ok)}.flag-caution{color:var(--caution)}.flag-danger{color:var(--danger)}
+.flag-fault{color:var(--fault)}.flag-stale{color:var(--stale)}
+.metric-note{font-size:11px;color:var(--t-dim);margin-top:auto}
+
+/* 히트맵 — 3D 산점(수중드론캡스톤 visualize_heatmap.py 형식 채택) */
+.heat-wrap{flex:1 1 auto;position:relative;display:flex;min-height:0}
+.heat-empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  border-radius:8px;background:var(--sunken);border:1px dashed var(--border);
+  color:var(--t-dim);font-size:13px;font-weight:600}
+.heat-wrap.empty .heat-empty{display:flex}
+.heat3d{flex:1 1 auto;min-height:0;border-radius:8px;background:#FCFCFB;
+  border:1px solid var(--border);cursor:grab;touch-action:none}
+.heat3d.drag{cursor:grabbing}
+.heat3d text{font-family:inherit}
+.hm-tip{position:absolute;pointer-events:none;display:none;z-index:5;
+  background:rgba(255,255,255,.97);border:1px solid var(--border);border-radius:8px;
+  padding:7px 10px;font-size:11px;line-height:1.6;color:var(--t-body);
+  box-shadow:var(--sh);white-space:nowrap}
+.hm-tip b{color:var(--t-strong);font-variant-numeric:tabular-nums}
+.hm-hint{position:absolute;right:10px;top:8px;font-size:10px;color:var(--t-dim);pointer-events:none}
+.legend{flex:0 0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ramp{height:12px;width:180px;border-radius:6px;
+  background:linear-gradient(90deg,#cde2fb,#9ec5f4,#6da7ec,#3987e5,#256abf,#184f95,#0d366b)}
+.sw{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t-dim)}
+.sw b{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw b.dia{border-radius:2px;transform:rotate(45deg);width:10px;height:10px}
+
+/* 지도 */
+.map{flex:1 1 auto;position:relative;border-radius:8px;overflow:hidden;background:#3D4A2E;min-height:0}
+.map .sat{position:absolute;inset:0;width:100%;height:100%}
+.map .coord{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.15);
+  border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--t-strong)}
+.map .attrib{position:absolute;right:8px;bottom:6px;font-size:10px;color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.8)}
+.map .basemap{position:absolute;left:10px;top:10px;display:flex;gap:4px;background:rgba(255,255,255,.92);
+  border-radius:999px;padding:3px}
+.map .basemap button{border:0;background:transparent;border-radius:999px;padding:4px 10px;font:inherit;
+  font-size:11px;font-weight:700;color:var(--t-dim);cursor:pointer}
+.map .basemap button[aria-selected="true"]{background:var(--brand-100);color:var(--brand-700)}
+.map .track{position:absolute;inset:0;width:100%;height:100%}
+.map .boat{position:absolute;left:46%;top:44%;width:16px;height:16px;border-radius:50%;background:#FFD400;
+  border:3px solid #1B1B1B;box-shadow:0 0 0 3px rgba(255,212,0,.35)}
+.map .pin{position:absolute;width:10px;height:10px;border-radius:50%;background:#33E39F;border:3px solid #0A2A1E}
+
+/* 상태 */
+body.stale .a-depth .body, body.stale .a-sensor .body{opacity:.42;filter:grayscale(1)}
+body.stale .pill.ok{display:none}
+body:not(.stale) .pill.stale{display:none}
+.banner{display:none;flex:0 0 auto;align-items:center;gap:10px;padding:10px 24px;background:var(--danger-bg);
+  color:var(--danger);font-weight:700;font-size:13px;border-bottom:1px solid #F1BEBE}
+body.stale .banner{display:flex}
+body.remote .winch button{opacity:.4;pointer-events:none}
+.ro{display:none;font-size:11px;font-weight:700;color:var(--brand-700);background:var(--brand-100);
+  border-radius:999px;padding:2px 8px}
+body.remote .ro{display:inline-block}
+
+/* 상태 전환 스위처 (목업 전용) */
+.switcher{position:fixed;right:16px;bottom:16px;display:flex;gap:6px;background:rgba(255,255,255,.95);
+  border:1px solid var(--border);border-radius:999px;padding:6px;box-shadow:var(--sh);z-index:9}
+.switcher button{border:0;background:transparent;border-radius:999px;padding:8px 14px;font:inherit;font-size:12px;font-weight:700;color:var(--t-dim);cursor:pointer}
+.switcher button.on{background:var(--brand-100);color:var(--brand-700)}
+
+@media (max-width:1599px){
+  main{grid-template-columns:200px 1fr 1fr;grid-template-rows:auto auto auto;
+    grid-template-areas:"rail heat depth" "rail heat sensor" "rail gps gps"}
+}
+@media (max-width:1199px){
+  main{grid-template-columns:1fr;grid-template-rows:none;
+    grid-template-areas:"rail" "heat" "depth" "sensor" "gps"}
+  .a-rail{flex-direction:row}.a-rail .card{flex:1 1 0}
+  .a-heat,.a-gps{min-height:420px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><h1>수중드론 수질측정 대시보드</h1><span>세종 용암저수지</span></div>
+  <div class="hr">
+    <span class="ro">원격 읽기 전용</span>
+    <span class="lbl">측정 차수</span>
+    <select id="surveySelect"></select>
+    <span class="pill ok"><i></i>연결됨</span>
+    <span class="pill stale"><i></i>연결 끊김 · 12초</span>
+    <span class="clock num">14:07:22</span>
+  </div>
+</header>
+
+<div class="banner">⚠ 데이터 수신이 12초간 없습니다 — 아래 값은 마지막 수신값이며 현재 상태가 아닙니다.</div>
+
+<main>
+  <!-- 좌측 레일 -->
+  <div class="a-rail">
+    <section class="card">
+      <h2>표시 항목</h2>
+      <div class="body">
+        <div class="tabs" id="metricTabs">
+          <div class="tab" role="tab" data-metric="ec" aria-selected="true">EC <span class="cnt">µS/cm</span></div>
+          <div class="tab" role="tab" data-metric="tds" aria-selected="false">TDS <span class="cnt">ppm</span></div>
+        </div>
+        <p class="note">히트맵·범례·센서 강조가 이 선택을 따릅니다.</p>
+      </div>
+    </section>
+    <section class="card" style="flex:1 1 auto">
+      <h2>깊이 슬라이스</h2>
+      <div class="body">
+        <div class="tabs" id="depthTabs">
+          <div class="tab" role="tab" data-depth="all" aria-selected="false">전체 (3층) <span class="cnt">1,181</span></div>
+          <div class="tab" role="tab" data-depth="0.5" aria-selected="false">0.5 m <span class="cnt">412</span></div>
+          <div class="tab" role="tab" data-depth="1.0" aria-selected="true">1.0 m <span class="cnt">398</span></div>
+          <div class="tab" role="tab" data-depth="1.5" aria-selected="false">1.5 m <span class="cnt">371</span></div>
+        </div>
+        <div class="divider"></div>
+        <button class="btn">CSV 내보내기</button>
+        <button class="btn sec">XLSX 내보내기</button>
+        <p class="note" id="csvNote">5차 · HOLD 구간 레코드 1,181건을 내보냅니다.</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- 히트맵 -->
+  <section class="card a-heat">
+    <h2><span>3D 히트맵 · <span id="heatMetric">EC</span></span> <span class="sub" id="heatSub">1.0 m · 표시 항목과 연동</span></h2>
+    <div class="body">
+      <div class="heat-wrap">
+        <svg class="heat3d" id="heat3d"></svg>
+        <div class="heat-empty" id="heatEmpty">이 깊이에서 측정된 레코드 없음 — HOLD 구간에서 생성됩니다</div>
+        <div class="hm-tip" id="hmTip"></div>
+        <span class="hm-hint">드래그로 회전</span>
+      </div>
+      <div class="legend">
+        <span class="sw num" id="lgMin">100</span><span class="ramp"></span>
+        <span class="sw num" id="lgMax">280 µS/cm</span>
+        <span class="sw"><b class="dia" style="background:#B26A00"></b>주의 <span id="lgCaution">280~700</span></span>
+        <span class="sw"><b class="dia" style="background:#C62828"></b>위험 <span id="lgDanger">&gt;700</span></span>
+        <span class="sw">마커 크기 = 값 비례(선형) · fault 3건 집계 제외</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 수심 : 기존 대시보드 depth.js 디자인 채택 -->
+  <section class="card a-depth">
+    <h2>현재 수심 <span class="sub">추정 · 윈치 시간 적분</span></h2>
+    <div class="body">
+      <div class="depth-wrap">
+        <div class="depth-col">
+          <svg viewBox="0 0 96 252" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
+               aria-label="수심 게이지">
+            <defs>
+              <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stop-color="#96D0FF"/>
+                <stop offset="55%"  stop-color="#3F8FCB"/>
+                <stop offset="100%" stop-color="#12405F"/>
+              </linearGradient>
+            </defs>
+            <rect x="26" y="28" width="30" height="210" rx="4" fill="url(#waterGrad)" stroke="#7FB6DE"/>
+            <g id="depth-ticks"></g>
+            <line id="probe-line" x1="41" y1="28" x2="41" y2="28" stroke="#FFD400" stroke-width="2"/>
+            <g id="probe" transform="translate(0 28)">
+              <rect x="33" y="-7" width="16" height="14" rx="3" fill="#FFD400" stroke="#1B1B1B" stroke-width="1.5"/>
+            </g>
+            <text x="41" y="14" fill="#12405F" font-size="9" font-weight="700" text-anchor="middle">수면</text>
+          </svg>
+        </div>
+
+        <div class="depth-info">
+          <div>
+            <div class="readout"><b class="num" id="depth-value">1.00</b><span>m</span></div>
+            <div class="hint" id="depth-target">측정 수심 1.0 m 유지 · 추정값</div>
+          </div>
+
+          <span class="badge st-HOLD" id="winch-state">측정 중 (정지)</span>
+
+          <div>
+            <div class="progress-label" id="progress-label">측정 진행 12/30초</div>
+            <div class="bar"><i id="progFill" style="width:40%"></i></div>
+          </div>
+
+          <div class="winch-btns">
+            <button data-cmd="down">▼ 내림</button><button data-cmd="stop">■ 정지</button><button data-cmd="up">▲ 올림</button>
+          </div>
+          <div class="auto-row">
+            <button class="mini-btn active" id="btnAuto" data-cmd="auto">자동 순환</button>
+            <span id="autoFlag">자동 순환 ON · 0.5→1.0→1.5</span>
+          </div>
+          <span class="lock" id="depthLock"></span>
+          <p class="hint">실제 윈치 조작과 동시에 눌러야 수심 추정이 맞습니다. <b>하강 0.5 m / 30초.</b></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 센서 : 기존 대시보드 gauges.js 아크 게이지 채택 -->
+  <section class="card a-sensor">
+    <h2>센서 실측값 <span class="sub">1초 갱신</span></h2>
+    <div class="body">
+      <div class="gauge-grid" id="gaugeGrid"></div>
+      <p class="metric-note">마지막 수신 14:07:22 · status ok · 표시 항목(<span id="selMetric">EC</span>) 강조 중</p>
+    </div>
+  </section>
+
+  <!-- GPS -->
+  <section class="card a-gps">
+    <h2>GPS · 이동 궤적 <span class="sub">현재 위치 1초 · 궤적 3초 배치</span></h2>
+    <div class="body">
+      <div class="map">
+        <!-- 실제 화면은 MapLibre + VWorld Satellite 타일. 아래는 대비 검증용 더미 항공사진 -->
+        <svg class="sat" viewBox="0 0 800 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/>
+              <feColorMatrix type="saturate" values="0"/>
+              <feComponentTransfer><feFuncA type="linear" slope="0.30"/></feComponentTransfer></filter>
+            <filter id="edge"><feTurbulence type="fractalNoise" baseFrequency="0.008" numOctaves="4" seed="9"/>
+              <feDisplacementMap in="SourceGraphic" scale="26"/></filter>
+          </defs>
+          <rect width="800" height="400" fill="#4B5A33"/>
+          <g opacity=".9">
+            <rect x="0" y="0" width="230" height="150" fill="#5D6B3C" transform="rotate(-4 115 75)"/>
+            <rect x="180" y="-20" width="180" height="120" fill="#6E7A46" transform="rotate(6 270 40)"/>
+            <rect x="560" y="0" width="260" height="180" fill="#55643A" transform="rotate(-3 690 90)"/>
+            <rect x="0" y="290" width="300" height="140" fill="#6A7444" transform="rotate(3 150 360)"/>
+            <rect x="600" y="270" width="240" height="150" fill="#5A6738"/>
+            <rect x="330" y="330" width="220" height="90" fill="#7C7A52" transform="rotate(-2 440 375)"/>
+          </g>
+          <g filter="url(#edge)">
+            <ellipse cx="410" cy="205" rx="270" ry="120" fill="#22414E"/>
+            <ellipse cx="410" cy="200" rx="256" ry="108" fill="#2C5566"/>
+            <ellipse cx="380" cy="196" rx="180" ry="70" fill="#356374" opacity=".7"/>
+          </g>
+          <path d="M120 40 L240 130 L470 350" stroke="#B9AE90" stroke-width="7" fill="none" opacity=".85"/>
+          <rect width="800" height="400" filter="url(#grain)" opacity=".45"/>
+        </svg>
+
+        <div class="basemap">
+          <button aria-selected="true">위성</button><button aria-selected="false">위성+지명</button>
+        </div>
+        <span class="coord num">36.5751, 127.2214</span>
+
+        <svg class="track" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <!-- 위성 위에서는 선 하나로는 안 보인다 → 어두운 halo 를 깔고 밝은 선을 얹는다 -->
+          <polyline points="14,78 26,60 34,66 42,52 50,46 58,52 66,44 76,40"
+            fill="none" stroke="#0A1620" stroke-width="2.6" stroke-linecap="round" opacity=".65"/>
+          <polyline points="14,78 26,60 34,66 42,52 50,46 58,52 66,44 76,40"
+            fill="none" stroke="#FFD400" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        <span class="pin" style="left:26%;top:60%"></span>
+        <span class="pin" style="left:42%;top:52%"></span>
+        <span class="pin" style="left:58%;top:52%"></span>
+        <span class="boat"></span>
+        <span class="attrib">© VWorld · 위성</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="switcher">
+  <button class="on" data-s="">정상</button>
+  <button data-s="stale">연결 끊김</button>
+  <button data-s="remote">원격 읽기전용</button>
+</div>
+
+<script>
+/* =========================================================================
+   목업 동작 사양 — UI_REQUIREMENTS.md §5A 를 그대로 구현한 것.
+   실제 서비스에서는 수심 상태기계를 라즈베리파이가 소유한다(CLAUDE.md 0절).
+   여기서는 화면 동작을 확인하려고 브라우저에서 10배속으로 흉내만 낸다.
+   ========================================================================= */
+
+const METRICS = {
+  ec:  { label:'EC',  unit:'µS/cm', domain:[100,280], danger:700 },
+  tds: { label:'TDS', unit:'ppm',   domain:[50,140],  danger:350 }
+};
+const DEPTHS = [0.5, 1.0, 1.5];
+const HOLD_TOTAL = 30;          // 초 (CLAUDE.md 가안)
+const DESCENT_RATE = 0.5 / 30;  // m/s — CLAUDE.md 1절 확정값 (30초에 0.5 m)
+const TICK = 0.2;               // 목업 렌더 주기(초). 속도는 실제와 같고 움직임만 부드럽게
+
+// 측정 차수 — 진행 중은 하나뿐, 나머지는 완료(조회 전용)
+const surveys = [
+  { id:5, status:'active', counts:{ '0.5':412, '1.0':398, '1.5':371 }, date:'2026-08-25' },
+  { id:4, status:'done',   counts:{ '0.5':330, '1.0':318, '1.5':301 }, date:'2026-08-19' },
+  { id:3, status:'done',   counts:{ '0.5':288, '1.0':275, '1.5':  0 }, date:'2026-08-12' }
+];
+
+const state = { metric:'ec', depth:'1.0', survey:5 };
+const winch = { auto:true, st:'SURFACE', depth:0, target:0.5, hold:0 };
+
+const cur = () => surveys.find(s => s.id === state.survey);
+const total = s => DEPTHS.reduce((a,d) => a + s.counts[d.toFixed(1)], 0);
+const comma = n => n.toLocaleString('ko-KR');
+const isRemote = () => document.body.classList.contains('remote');
+const isStale  = () => document.body.classList.contains('stale');
+
+/* ── 3D 히트맵 — 수중드론캡스톤 visualize_heatmap.py 형식 이식 ────────────
+   · (X, Y, 수심) 격자 셀 평균을 3D 산점으로 그린다
+   · 정상 셀: 파랑 단일 순차 램프 + 사각형 / 임계 초과: 다이아몬드
+   · 수심 축은 아래로 갈수록 깊게(reversed)                                */
+const BLUE_RAMP = ['#cde2fb','#b7d3f6','#9ec5f4','#86b6ef','#6da7ec','#5598e7',
+                   '#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281','#0d366b'];
+const GRID = 7;                        // 격자 7×7
+const heatSvg = document.getElementById('heat3d');
+const tip = document.getElementById('hmTip');
+const view = { az: -0.62, el: 0.52 };  // 방위각 / 고도각(라디안)
+
+let seed = 7;
+const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+
+/** 셀 더미 데이터 — 차수·지표별로 고정 */
+function cells() {
+  const m = METRICS[state.metric], [lo, hi] = m.domain, span = hi - lo;
+  seed = (state.metric === 'ec' ? 7 : 19) + state.survey * 31;
+  const out = [];
+  for (const d of DEPTHS) {
+    if (cur().counts[d.toFixed(1)] === 0) continue;      // 안 잰 층은 그리지 않는다
+    for (let i = 0; i < GRID; i++) for (let j = 0; j < GRID; j++) {
+      if (rnd() < 0.10) continue;                        // 측정 안 한 격자
+      const cx = (i - 3) / 3, cy = (j - 3) / 3;          // 중앙에 오염원이 있는 것처럼
+      const bump = Math.exp(-(cx * cx + cy * cy) * 1.3) * span * 0.75 * (0.4 + d * 0.5);
+      const v = lo + span * 0.15 + bump + (rnd() - 0.5) * span * 0.35;
+      out.push({ i, j, d, v, n: 6 + Math.floor(rnd() * 12) });
+    }
+  }
+  return out;
+}
+
+/** 3D → 2D 투영 */
+function project(x, y, z, box) {
+  const ca = Math.cos(view.az), sa = Math.sin(view.az);
+  const rx = x * ca - y * sa, ry = x * sa + y * ca;
+  return [box.cx + rx * box.w,
+          box.cy + ry * box.w * Math.sin(view.el) + z * box.h];
+}
+
+function renderHeat() {
+  const m = METRICS[state.metric], [lo, hi] = m.domain;
+  const showAll = state.depth === 'all';
+  const count = showAll ? total(cur()) : cur().counts[state.depth];
+  document.querySelector('.heat-wrap').classList.toggle('empty', count === 0);
+  paintLegend();
+
+  const W = heatSvg.clientWidth || 760, H = heatSvg.clientHeight || 360;
+  heatSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  if (count === 0) { heatSvg.innerHTML = ''; return; }
+
+  // 세로 가운데 정렬: 위아래로 w·sin(el) 만큼, 그 사이 h 만큼 차지한다
+  const w = Math.min((W - 90) / 2.8, H * 0.30);   // 좌측 수심 라벨 자리 확보
+  const h = Math.min(H * 0.42, 300);
+  const labels = [];
+  const box = { cx: W / 2 + 16, w, h, cy: (H - (2 * w * Math.sin(view.el) + h)) / 2 + w * Math.sin(view.el) };
+  const g = [];
+
+  // ── 수심 평면 3장 ──
+  const zOf = d => (d - DEPTHS[0]) / (DEPTHS[DEPTHS.length-1] - DEPTHS[0]);
+  DEPTHS.forEach(d => {
+    const z = zOf(d);
+    const on = showAll || +state.depth === d;
+    const corner = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([x, y]) => project(x, y, z, box));
+    g.push(`<polygon points="${corner.map(p => p.join(',')).join(' ')}"
+             fill="${on ? '#F4F7FA' : '#FAFAFA'}" stroke="#E1E0D9" stroke-width="1"
+             opacity="${on ? 0.9 : 0.5}"/>`);
+    for (let s = 1; s < 4; s++) {
+      const u = -1 + s * 0.5;
+      const a1 = project(u, -1, z, box), a2 = project(u, 1, z, box);
+      const b1 = project(-1, u, z, box), b2 = project(1, u, z, box);
+      g.push(`<path d="M${a1} L${a2} M${b1} L${b2}" stroke="#E8E7E0" stroke-width="0.8" fill="none"/>`);
+    }
+    const lp = project(-1.04, -1.04, z, box);   // 왼쪽 뒤 모서리 = 그 층의 실제 높이
+    labels.push(`<text x="${lp[0] - 6}" y="${lp[1] + 4}" font-size="11" font-weight="700"
+             fill="${on ? '#12405F' : '#B9C3CA'}" text-anchor="end"
+             stroke="#FCFCFB" stroke-width="3" paint-order="stroke">${d.toFixed(1)} m</text>`);
+  });
+  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([x, y]) => {
+    const p1 = project(x, y, 0, box), p2 = project(x, y, 1, box);
+    g.push(`<line x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}"
+             stroke="#E1E0D9" stroke-width="1"/>`);
+  });
+
+  // ── 셀 마커 ──
+  const marks = cells().map(c => {
+    const x = (c.i / (GRID - 1)) * 2 - 1, y = (c.j / (GRID - 1)) * 2 - 1;
+    const [px, py] = project(x, y, zOf(c.d), box);
+    const on = showAll || +state.depth === c.d;
+    // 크기 = 값 비례(선형). CLAUDE.md 1절: 값을 왜곡하는 확대 금지
+    const tt = Math.max(0, Math.min(1.4, (c.v - lo) / (hi - lo)));
+    const size = 5 + tt * 9;
+    let color, shape = 'square';
+    if (c.v > m.danger)   { color = '#C62828'; shape = 'diamond'; }
+    else if (c.v > hi)    { color = '#B26A00'; shape = 'diamond'; }
+    else color = BLUE_RAMP[Math.min(BLUE_RAMP.length - 1,
+           Math.max(0, Math.round((c.v - lo) / (hi - lo) * (BLUE_RAMP.length - 1))))];
+    return { ...c, px, py, size, color, shape, on };
+  }).sort((a, b) => a.py - b.py);        // 뒤 → 앞 순서로 그린다
+
+  marks.forEach(k => {
+    const s = k.size, o = k.on ? 0.92 : 0.16;
+    const rot = k.shape === 'diamond' ? ` transform="rotate(45 ${k.px} ${k.py})"` : ' rx="1"';
+    g.push(`<rect x="${k.px - s / 2}" y="${k.py - s / 2}" width="${s}" height="${s}"${rot}
+             fill="${k.color}" opacity="${o}"/>`);
+  });
+
+  const xl = project(0, -1.5, 1, box), yl = project(1.5, 0, 1, box);
+  labels.push(`<text x="${xl[0]}" y="${xl[1] + 14}" font-size="11" fill="#898781"
+        text-anchor="middle" stroke="#FCFCFB" stroke-width="3" paint-order="stroke">동서 X</text>`);
+  labels.push(`<text x="${yl[0]}" y="${yl[1] + 14}" font-size="11" fill="#898781"
+        text-anchor="middle" stroke="#FCFCFB" stroke-width="3" paint-order="stroke">남북 Y</text>`);
+
+  heatSvg.innerHTML = g.join('') + labels.join('');
+  heatSvg._marks = marks;
+
+  document.getElementById('heatMetric').textContent = m.label;
+  document.getElementById('heatSub').textContent =
+    `${showAll ? '3층 전체' : state.depth + ' m'} · ${comma(count)}건 · 표시 항목과 연동`;
+}
+
+function paintLegend() {
+  const m = METRICS[state.metric], [lo, hi] = m.domain;
+  document.getElementById('lgMin').textContent = lo;
+  document.getElementById('lgMax').textContent = hi + ' ' + m.unit;
+  document.getElementById('lgCaution').textContent = `${hi}~${m.danger}`;
+  document.getElementById('lgDanger').textContent = '>' + m.danger;
+}
+
+// 드래그로 회전 · 마커 hover 툴팁
+let drag = null;
+heatSvg.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY, az: view.az, el: view.el };
+  heatSvg.classList.add('drag'); heatSvg.setPointerCapture(e.pointerId);
+});
+heatSvg.addEventListener('pointermove', e => {
+  if (drag) {
+    view.az = drag.az + (e.clientX - drag.x) * 0.008;
+    view.el = Math.max(0.12, Math.min(0.95, drag.el + (e.clientY - drag.y) * 0.004));
+    renderHeat();
+    return;
+  }
+  const marks = heatSvg._marks || [];
+  const r = heatSvg.getBoundingClientRect();
+  const sx = (e.clientX - r.left) * (heatSvg.viewBox.baseVal.width / r.width);
+  const sy = (e.clientY - r.top) * (heatSvg.viewBox.baseVal.height / r.height);
+  const hit = [...marks].reverse().find(k => k.on && Math.abs(k.px - sx) < 7 && Math.abs(k.py - sy) < 7);
+  if (!hit) { tip.style.display = 'none'; return; }
+  const m = METRICS[state.metric];
+  tip.innerHTML = `수심 <b>${hit.d.toFixed(1)} m</b> · 격자 X${hit.i} Y${hit.j}<br>` +
+                  `평균 ${m.label} <b>${hit.v.toFixed(1)}</b> ${m.unit}<br>누적 측정 <b>${hit.n}</b>회`;
+  tip.style.display = 'block';
+  tip.style.left = Math.min(r.width - 160, e.clientX - r.left + 12) + 'px';
+  tip.style.top = (e.clientY - r.top + 12) + 'px';
+});
+const endDrag = () => { drag = null; heatSvg.classList.remove('drag'); };
+heatSvg.addEventListener('pointerup', endDrag);
+heatSvg.addEventListener('pointercancel', endDrag);
+heatSvg.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
+window.addEventListener('resize', () => renderHeat());
+
+/* ── 센서 아크 게이지 (panels/gauges.js 이식) ───────────────────────────── */
+const GAUGE_SCALE = { temp:[0,35], ec:[0,800], tds:[0,400] };
+const ZONE = { ok:'#0B7A50', caution:'#9A5A00', danger:'#A81E1E' };
+const GAUGE_ZONES = {
+  temp:[[0,35,ZONE.ok]],
+  ec:[[0,100,ZONE.caution],[100,280,ZONE.ok],[280,700,ZONE.caution],[700,800,ZONE.danger]],
+  tds:[[0,50,ZONE.caution],[50,140,ZONE.ok],[140,350,ZONE.caution],[350,400,ZONE.danger]]
+};
+const FLAG_TEXT = { normal:'정상', caution:'주의', danger:'위험', fault:'이상값', stale:'연결 끊김' };
+const R = 42, CX = 50, CY = 50, START = 150, SWEEP = 240;
+const polar = d => [CX + R*Math.cos(d*Math.PI/180), CY + R*Math.sin(d*Math.PI/180)];
+function arcPath(f, to) {
+  const [x1,y1] = polar(f), [x2,y2] = polar(to);
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${R} ${R} 0 ${Math.abs(to-f)>180?1:0} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+const toDeg = (m,v) => { const [lo,hi]=GAUGE_SCALE[m];
+  return START + Math.max(0, Math.min(1,(v-lo)/(hi-lo))) * SWEEP; };
+
+const SENSORS = [
+  { metric:'temp', name:'수온', unit:'℃',     base:21.3  },
+  { metric:'ec',   name:'EC',   unit:'µS/cm', base:187.5 },
+  { metric:'tds',  name:'TDS',  unit:'ppm',   base:152.0 }
+];
+function classify(metric, v) {
+  if (v === null || Number.isNaN(v)) return 'fault';
+  if (metric === 'temp') return (v < 0 || v > 35) ? 'fault' : 'normal';
+  const [c1,c2,dg] = metric === 'ec' ? [100,280,700] : [50,140,350];
+  if (v > dg) return 'danger';
+  if (v > c2 || v < c1) return 'caution';
+  return 'normal';
+}
+
+function buildGauges() {
+  document.getElementById('gaugeGrid').innerHTML = SENSORS.map(r => {
+    const zones = GAUGE_ZONES[r.metric].map(([a,b,c]) =>
+      `<path d="${arcPath(toDeg(r.metric,a), toDeg(r.metric,b))}" stroke="${c}" stroke-width="7"
+             fill="none" opacity="0.9" stroke-linecap="butt"/>`).join('');
+    return `<div class="gauge" data-metric="${r.metric}">
+      <div class="gauge-name">${r.name}</div>
+      <svg viewBox="0 0 100 78" width="100%" style="max-height:104px">
+        <path d="${arcPath(START, START+SWEEP)}" stroke="#E1E4E6" stroke-width="7" fill="none"/>
+        ${zones}
+        <path class="g-needle" d="" stroke="#0F2B3D" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <circle cx="${CX}" cy="${CY}" r="3.5" fill="#0F2B3D"/>
+      </svg>
+      <div class="gauge-value num">--<span class="gauge-unit"> ${r.unit}</span></div>
+      <div class="gauge-flag flag-normal">-</div>
+    </div>`;
+  }).join('');
+}
+
+// 1초 갱신 — DOM 을 다시 만들지 않고 텍스트/속성만 바꾼다(CLAUDE.md 3절: 전체 리렌더 금지)
+function tickGauges() {
+  SENSORS.forEach(r => {
+    const box = document.querySelector(`.gauge[data-metric="${r.metric}"]`);
+    const v = r.base + (Math.random() - 0.5) * (r.metric === 'temp' ? 0.2 : 4);
+    const lvl = isStale() ? 'stale' : classify(r.metric, v);
+    const deg = toDeg(r.metric, v), [x,y] = polar(deg);
+    const ix = CX + (R-15)*Math.cos(deg*Math.PI/180), iy = CY + (R-15)*Math.sin(deg*Math.PI/180);
+    box.querySelector('.g-needle').setAttribute('d',
+      `M ${ix.toFixed(2)} ${iy.toFixed(2)} L ${x.toFixed(2)} ${y.toFixed(2)}`);
+    box.querySelector('.gauge-value').firstChild.nodeValue = v.toFixed(1);
+    box.classList.remove('lv-caution','lv-danger','lv-fault');
+    const grade = classify(r.metric, v);
+    if (!isStale() && grade !== 'normal') box.classList.add('lv-' + grade);
+    box.classList.toggle('sel', r.metric === state.metric);
+    const flag = box.querySelector('.gauge-flag');
+    flag.textContent = FLAG_TEXT[lvl];
+    flag.className = 'gauge-flag flag-' + lvl;
+  });
+  document.getElementById('selMetric').textContent = METRICS[state.metric].label;
+}
+
+/* ── 수심 눈금 ─────────────────────────────────────────────────────────── */
+const BAR_TOP = 28, BAR_H = 210, MAX_D = 1.5;
+document.getElementById('depth-ticks').innerHTML = DEPTHS.map(d => {
+  const y = BAR_TOP + (d/MAX_D)*BAR_H;
+  return `<line x1="22" y1="${y}" x2="60" y2="${y}" stroke="#9FB3C0" stroke-dasharray="3 3"/>` +
+         `<text x="62" y="${y+3}" fill="#5D7A8C" font-size="9">${d.toFixed(1)}</text>`;
+}).join('');
+
+/* ── 수심 상태기계 (목업) ──────────────────────────────────────────────── */
+const STATE_LABEL = { SURFACE:'수면 대기', DESCENDING:'하강 중', HOLD:'측정 중 (정지)', ASCENDING:'상승 중' };
+const atLevel = d => DEPTHS.find(l => Math.abs(d - l) < 0.03) ?? null;
+const RATE = DESCENT_RATE;       // 상승 속도는 실측 전까지 하강과 동일 (CLAUDE.md 1절 TBD)
+
+function command(cmd) {
+  if (isRemote()) return;                       // 원격은 읽기 전용 (CLAUDE.md 0절)
+  if (cur().status !== 'active') return;        // 완료된 차수는 조작 불가
+  if (cmd === 'auto') { winch.auto = !winch.auto; return; }
+  winch.auto = false;
+  if (cmd === 'down') { winch.st = 'DESCENDING'; winch.target = DEPTHS.find(d => d > winch.depth + 0.02) ?? MAX_D; }
+  if (cmd === 'up')   { winch.st = 'ASCENDING'; }
+  if (cmd === 'stop') { winch.st = 'HOLD'; winch.hold = 0; }
+}
+
+function stepWinch(dt) {
+  if (cur().status !== 'active') { winch.st = 'SURFACE'; return; }
+  if (winch.st === 'DESCENDING') {
+    winch.depth = Math.min(winch.target, winch.depth + RATE * dt);
+    if (winch.depth >= winch.target - 1e-6 && winch.auto) { winch.st = 'HOLD'; winch.hold = 0; }
+  } else if (winch.st === 'ASCENDING') {
+    winch.depth = Math.max(0, winch.depth - RATE * dt);
+    if (winch.depth <= 1e-6) winch.st = 'SURFACE';
+  } else if (winch.st === 'HOLD') {
+    const lv = atLevel(winch.depth);
+    winch.hold += dt;
+    // 측정 레코드는 HOLD + 측정 수심에서만 생긴다 (CLAUDE.md 1절)
+    if (lv !== null && !isStale()) {
+      const key = lv.toFixed(1);
+      const add = Math.floor(winch.hold) - Math.floor(winch.hold - dt);
+      if (add > 0) cur().counts[key] += add;
+    }
+    if (winch.auto && winch.hold >= HOLD_TOTAL) {
+      const next = DEPTHS.find(d => d > winch.depth + 0.02);
+      if (next) { winch.st = 'DESCENDING'; winch.target = next; }
+      else winch.st = 'ASCENDING';
+    }
+  } else if (winch.st === 'SURFACE' && winch.auto) {
+    winch.st = 'DESCENDING'; winch.target = DEPTHS[0];
+  }
+}
+
+function paintDepth() {
+  const y = BAR_TOP + Math.min(winch.depth / MAX_D, 1) * BAR_H;
+  document.getElementById('probe').setAttribute('transform', `translate(0 ${y})`);
+  document.getElementById('probe-line').setAttribute('y2', String(y));
+  document.getElementById('depth-value').textContent = winch.depth.toFixed(2);
+
+  const badge = document.getElementById('winch-state');
+  badge.textContent = STATE_LABEL[winch.st];
+  badge.className = 'badge st-' + winch.st;
+
+  const tgt = document.getElementById('depth-target');
+  const lab = document.getElementById('progress-label');
+  const fill = document.getElementById('progFill');
+  if (isStale()) {
+    tgt.textContent = '연결 끊김 — 수심 미확인';
+  } else if (winch.st === 'HOLD') {
+    const lv = atLevel(winch.depth);
+    lab.textContent = `측정 진행 ${Math.min(HOLD_TOTAL, Math.floor(winch.hold))}/${HOLD_TOTAL}초`;
+    fill.style.width = Math.min(100, winch.hold / HOLD_TOTAL * 100) + '%';
+    tgt.textContent = lv === null ? '측정 수심 아님 — 기록되지 않음'
+                                  : `측정 수심 ${lv.toFixed(1)} m 유지 · 추정값`;
+  } else if (winch.st === 'DESCENDING') {
+    lab.textContent = '하강 진행';
+    fill.style.width = Math.min(100, winch.depth / winch.target * 100) + '%';
+    tgt.textContent = `목표 수심 ${winch.target.toFixed(1)} m · 추정값`;
+  } else if (winch.st === 'ASCENDING') {
+    lab.textContent = '상승 진행';
+    fill.style.width = Math.max(0, 100 - winch.depth / MAX_D * 100) + '%';
+    tgt.textContent = '수면 복귀 중 · 추정값';
+  } else {
+    lab.textContent = '대기';
+    fill.style.width = '0%';
+    tgt.textContent = winch.auto ? '자동 순환 대기' : '목표 수심 —';
+  }
+
+  document.getElementById('btnAuto').classList.toggle('active', winch.auto);
+  document.getElementById('autoFlag').textContent =
+    winch.auto ? '자동 순환 ON · 0.5→1.0→1.5' : '수동 조작';
+  document.querySelectorAll('.winch-btns button').forEach(b => {
+    const on = (b.dataset.cmd === 'down' && winch.st === 'DESCENDING')
+            || (b.dataset.cmd === 'up'   && winch.st === 'ASCENDING')
+            || (b.dataset.cmd === 'stop' && (winch.st === 'HOLD' || winch.st === 'SURFACE'));
+    b.classList.toggle('active', on && !winch.auto);
+    b.disabled = isRemote() || cur().status !== 'active';
+  });
+  document.getElementById('btnAuto').disabled = isRemote() || cur().status !== 'active';
+  const lock = document.getElementById('depthLock');
+  const msg = isRemote() ? '원격 접속 — 윈치 조작 불가'
+            : cur().status !== 'active' ? `${cur().id}차는 완료된 조사 — 조회 전용` : '';
+  lock.textContent = msg;
+  lock.classList.toggle('on', Boolean(msg));
+}
+
+/* ── 측정 차수 · 깊이 슬라이스 ─────────────────────────────────────────── */
+function renderSurveyOptions() {
+  document.getElementById('surveySelect').innerHTML = surveys.map(s =>
+    `<option value="${s.id}"${s.id === state.survey ? ' selected' : ''}>${s.id}차 (${
+      s.status === 'active' ? '측정 중' : '완료'} ${comma(total(s))}건)</option>`).join('');
+}
+function renderRail() {
+  const s = cur();
+  DEPTHS.forEach(d => {
+    const k = d.toFixed(1);
+    const tab = document.querySelector(`.tab[data-depth="${k}"]`);
+    tab.querySelector('.cnt').textContent = comma(s.counts[k]);
+    tab.classList.toggle('zero', s.counts[k] === 0);
+  });
+  const allTab = document.querySelector('.tab[data-depth="all"]');
+  if (allTab) allTab.querySelector('.cnt').textContent = comma(total(s));
+  document.getElementById('csvNote').textContent =
+    `${s.id}차 · HOLD 구간 레코드 ${comma(total(s))}건을 내보냅니다.`;
+}
+
+/* ── 배선 ──────────────────────────────────────────────────────────────── */
+function apply() { renderHeat(); renderRail(); tickGauges(); paintDepth(); }
+
+document.getElementById('metricTabs').onclick = e => {
+  const el = e.target.closest('.tab'); if (!el) return;
+  state.metric = el.dataset.metric;
+  document.querySelectorAll('#metricTabs .tab').forEach(x => x.setAttribute('aria-selected', String(x === el)));
+  apply();
+};
+document.getElementById('depthTabs').onclick = e => {
+  const el = e.target.closest('.tab'); if (!el) return;
+  state.depth = el.dataset.depth;
+  document.querySelectorAll('#depthTabs .tab').forEach(x => x.setAttribute('aria-selected', String(x === el)));
+  apply();
+};
+document.getElementById('surveySelect').onchange = e => {
+  state.survey = +e.target.value;
+  if (cur().status !== 'active') { winch.st = 'SURFACE'; winch.depth = 0; winch.auto = false; }
+  renderSurveyOptions(); apply();
+};
+document.querySelectorAll('.winch-btns button, #btnAuto').forEach(b => {
+  b.onclick = () => { command(b.dataset.cmd); paintDepth(); };
+});
+document.querySelectorAll('.switcher button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.switcher button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  document.body.className = b.dataset.s;
+  apply();
+});
+document.querySelectorAll('.basemap').forEach(g => g.onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  g.querySelectorAll('button').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+});
+
+buildGauges();
+renderSurveyOptions();
+apply();
+
+// 렌더 0.2초(움직임만 부드럽게) · 게이지·시계 1초 · 히트맵·레일 3초 배치 (CLAUDE.md 3절)
+let ticks = 0;
+setInterval(() => {
+  if (!isStale()) stepWinch(TICK);
+  paintDepth();
+  ticks++;
+  if (ticks % 5 === 0) {                       // 1초
+    tickGauges();
+    document.querySelector('.clock').textContent = new Date().toTimeString().slice(0, 8);
+  }
+  if (ticks % 15 === 0) { renderHeat(); renderRail(); }   // 3초
+}, TICK * 1000);
+</script>
+</body>
+</html>
