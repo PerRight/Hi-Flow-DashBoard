@@ -5,7 +5,7 @@
  * fault(NaN·범위 밖) 는 값을 지우지 않고 fault 배지로 표시한다.
  */
 
-import { THRESHOLDS, classify } from '../config.js';
+import { THRESHOLDS, GAUGE_SCALE, classify } from '../config.js';
 
 const FLAG_TEXT = {
   normal: '정상',
@@ -15,18 +15,23 @@ const FLAG_TEXT = {
   stale: '연결 끊김'
 };
 
-// 게이지 눈금 범위(표시용). 임계값 자체가 아니라 바늘이 도는 범위다.
-const GAUGE_SCALE = {
-  temp: [0, 35],
-  ec: [0, 800],
-  tds: [0, 400]
+// 게이지 눈금 범위는 config.js 의 GAUGE_SCALE 이 정본이다
+// (수온 0~50 ℃ / EC 0~1000 µS/cm / TDS 0~500 ppm — 사용자 확정 2026-08-28).
+// 임계값이 아니라 바늘이 도는 범위다. 임계값은 CLAUDE.md 1절 = config.js THRESHOLDS.
+
+// 색 구간 경계 수치 — 화면에 그대로 적어 준다 (사용자 확정 2026-09-02).
+// "초록↔노랑" = 정상 상한, "노랑↔빨강" = 위험 임계값. CLAUDE.md 1절 표와 같은 값이다.
+const GAUGE_BOUNDS = {
+  temp: null,                       // 수온은 주의 구간이 없다 (0~35 밖이면 fault)
+  ec: { caution: 280, danger: 700 },
+  tds: { caution: 140, danger: 350 }
 };
 
-// 눈금 위 색 구간: [시작, 끝, 색]
+// 눈금 위 색 구간: [시작, 끝, 색]. 하한 미만도 정상이므로 초록이 0 에서 시작한다.
 const GAUGE_ZONES = {
-  temp: [[0, 35, '#0E8F5F']],
-  ec: [[0, 100, '#B26A00'], [100, 280, '#0E8F5F'], [280, 700, '#B26A00'], [700, 800, '#C62828']],
-  tds: [[0, 50, '#B26A00'], [50, 140, '#0E8F5F'], [140, 350, '#B26A00'], [350, 400, '#C62828']]
+  temp: [[0, 35, '#0E8F5F'], [35, 50, '#C62828']],
+  ec: [[0, 280, '#0E8F5F'], [280, 700, '#B26A00'], [700, 1000, '#C62828']],
+  tds: [[0, 140, '#0E8F5F'], [140, 350, '#B26A00'], [350, 500, '#C62828']]
 };
 
 const R = 42, CX = 50, CY = 50;
@@ -48,22 +53,51 @@ function valueToDeg(metric, v) {
   return START + t * SWEEP;
 }
 
+const fmtTick = (v) => (v >= 1000 ? `${v / 1000}k` : String(v));
+
 function gaugeMarkup(metric, name, unit) {
+  const [lo, hi] = GAUGE_SCALE[metric];
   const zones = GAUGE_ZONES[metric]
     .map(([a, b, c]) =>
       `<path d="${arcPath(valueToDeg(metric, a), valueToDeg(metric, b))}"
              stroke="${c}" stroke-width="7" fill="none" opacity="0.5" stroke-linecap="butt"/>`)
     .join('');
+  // 눈금 양 끝 라벨 — 이 게이지가 어느 범위를 보여주는지 한눈에 (요청 2, 2026-08-28)
+  const [lx, ly] = polar(START);
+  const [hx, hy] = polar(START + SWEEP);
+  // 색이 바뀌는 지점에 짧은 눈금을 세워 아래 숫자와 이어 준다 (2026-09-02)
+  const bounds = GAUGE_BOUNDS[metric];
+  const boundTicks = !bounds ? '' : [
+    [bounds.caution, '#B26A00'], [bounds.danger, '#C62828']
+  ].map(([v, c]) => {
+    const deg = valueToDeg(metric, v);
+    const rad = (deg * Math.PI) / 180;
+    const x1 = CX + (R - 5) * Math.cos(rad), y1 = CY + (R - 5) * Math.sin(rad);
+    const x2 = CX + (R + 5) * Math.cos(rad), y2 = CY + (R + 5) * Math.sin(rad);
+    return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}"
+                  y2="${y2.toFixed(1)}" stroke="${c}" stroke-width="1.6" stroke-linecap="round"/>`;
+  }).join('');
+  const boundText = bounds
+    ? `<span class="b b-caution">주의 ${bounds.caution}</span>`
+      + `<span class="b-sep">·</span>`
+      + `<span class="b b-danger">위험 ${bounds.danger}</span>`
+    : `<span class="b b-ok">정상 0~35</span>`;
   return `
     <div class="gauge" data-metric="${metric}">
       <div class="gauge-name">${name}</div>
-      <svg viewBox="0 0 100 78" width="100%" style="max-height:104px">
+      <svg viewBox="0 0 100 84" width="100%" style="max-height:82px">
         <path d="${arcPath(START, START + SWEEP)}" stroke="#E1E4E6" stroke-width="7" fill="none"/>
         ${zones}
+        ${boundTicks}
+        <text x="${(lx - 1).toFixed(1)}" y="${(ly + 11).toFixed(1)}" class="g-tick"
+              text-anchor="middle">${fmtTick(lo)}</text>
+        <text x="${(hx + 1).toFixed(1)}" y="${(hy + 11).toFixed(1)}" class="g-tick"
+              text-anchor="middle">${fmtTick(hi)}</text>
         <path class="g-needle" d="" stroke="#0F2B3D" stroke-width="3" fill="none" stroke-linecap="round"/>
         <circle cx="${CX}" cy="${CY}" r="3.5" fill="#0F2B3D"/>
       </svg>
       <div class="gauge-value">--<span class="gauge-unit"> ${unit}</span></div>
+      <div class="gauge-bounds">${boundText}</div>
       <div class="gauge-flag flag-normal">-</div>
     </div>`;
 }

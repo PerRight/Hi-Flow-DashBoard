@@ -15,8 +15,8 @@
  * ws-client.js(재연결 로직)와 config.js(상수)는 그대로 가져다 쓴다(CLAUDE.md 4절).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createWsClient, fetchSurveys, fetchRecords } from '../ws-client.js';
-import { STALE_MS, TICK_FAST_MS, TICK_BATCH_MS } from '../config.js';
+import { createWsClient, fetchSurveys, fetchRecords, fetchSites } from '../ws-client.js';
+import { STALE_MS, TICK_FAST_MS, TICK_BATCH_MS, HOLD_SECONDS } from '../config.js';
 
 const MAX_LIVE_RECORDS = 20000;   // 측정 레코드 기준(HOLD 구간만 쌓임). 브라우저 메모리 보호.
 const MAX_TRAIL_POINTS = 3000;    // 보트 궤적 점 개수 상한
@@ -33,6 +33,9 @@ export function useDashboardData() {
 
   const [selectedSurvey, setSelectedSurveyState] = useState(null);
   const [surveyOptions, setSurveyOptions] = useState([]); // [{no, label}]
+  // 조사지·차수 (2026-08-29) — 차수는 조작자가 열어야 생긴다.
+  const [siteOptions, setSiteOptions] = useState([]);     // 최근에 쓴 조사지 이름
+  const [surveyRows, setSurveyRows] = useState([]);       // /surveys 원본 행
 
   // ── 실시간 수신 ──────────────────────────────────────────────────────────
   const lastLiveAtRef = useRef(0);           // 마지막 live 수신 시각(ms) — stale 판정 기준
@@ -55,7 +58,9 @@ export function useDashboardData() {
   const [depthSeq, setDepthSeq] = useState(0);   // live 수신마다 증가 (수심 패널)
   const [batchSeq, setBatchSeq] = useState(0);   // 3초 배치 (지도·히트맵)
   const [winchMeta, setWinchMeta] = useState({
-    auto: true, holdElapsed: 0, holdTotal: 30, nextLevel: null, levels: []
+    measuring: false, holdElapsed: 0, holdTotal: HOLD_SECONDS, holdDone: false,
+    nextLevel: null, levels: [],
+    surveyOpen: false, survey: null, site: null, round: null, surveyDate: null
   });
   const [stale, setStale] = useState(false);
   const [linkUp, setLinkUp] = useState(false);
@@ -120,26 +125,34 @@ export function useDashboardData() {
 
   const refreshSurveys = useCallback(async () => {
     const info = await fetchSurveys();
-    activeSurveyRef.current = info.active;
+    // active 는 "열려 있는 차수" 다. 아무 차수도 열지 않았으면 null 이다
+    // (전원만 켜져 있다고 차수가 생기지 않는다 — 사용자 확정 2026-08-29).
+    activeSurveyRef.current = info.active_recording ? info.active : null;
+    setSurveyRows(info.surveys ?? []);
 
-    for (const s of info.surveys) {
+    for (const s of info.surveys ?? []) {
+      const open = s.ended_at === null || s.ended_at === undefined;
+      const md = (s.survey_date ?? '').slice(5).replace('-', '/');
       metaRef.current.set(s.survey, {
-        label: s.survey === info.active
-          ? `${s.survey}차 (측정 중 · ${s.count}건)`
-          : `${s.survey}차 (완료 · ${s.count}건)`,
-        live: s.survey === info.active
+        label: `${s.site} ${md} ${s.round}차 (${open ? '측정 중' : '완료'} · ${s.count}건)`,
+        live: open
       });
     }
-    if (!metaRef.current.has(info.active)) {
-      metaRef.current.set(info.active, { label: `${info.active}차 (측정 중)`, live: true });
-    }
-    if (selectedSurveyRef.current === null) {
-      selectedSurveyRef.current = info.active;
-      setSelectedSurveyState(info.active);
+    // 처음 열었을 때: 진행 중 차수가 있으면 그것을, 없으면 가장 최근 차수를 본다.
+    if (selectedSurveyRef.current === null && (info.surveys ?? []).length) {
+      const pick = info.active_recording
+        ? info.active
+        : info.surveys[info.surveys.length - 1].survey;
+      selectedSurveyRef.current = pick;
+      setSelectedSurveyState(pick);
     }
     renderSurveyOptions();
-    await ensureLoaded(selectedSurveyRef.current);
+    if (selectedSurveyRef.current !== null) await ensureLoaded(selectedSurveyRef.current);
   }, [ensureLoaded, renderSurveyOptions]);
+
+  const refreshSites = useCallback(async () => {
+    try { setSiteOptions(await fetchSites()); } catch { /* 목록은 없어도 된다 */ }
+  }, []);
 
   // ── stale 감시 (CLAUDE.md 6절: 오래된 데이터를 정상처럼 보이면 안 된다) ──────
   const recomputeStale = useCallback((force = false) => {
@@ -157,7 +170,34 @@ export function useDashboardData() {
     });
   }, [ensureLoaded, flushBatch, recomputeStale]);
 
-  const sendCommand = useCallback((cmd) => clientRef.current?.sendCommand(cmd), []);
+  const sendCommand = useCallback((cmd, extra) => clientRef.current?.sendCommand(cmd, extra), []);
+
+  /** 차수 열기 — 조사지 이름이 있어야 한다. 차수 번호는 서버가 조사지+날짜로 정한다. */
+  const startSurvey = useCallback(async (site, memo) => {
+    const name = (site ?? '').trim();
+    if (!name) return false;
+    const ok = clientRef.current?.sendCommand('survey_start', { site: name, memo });
+    if (!ok) return false;
+    await new Promise((r) => setTimeout(r, 400));    // 서버가 surveys 에 넣을 시간
+    await refreshSurveys().catch(() => {});
+    await refreshSites();
+    // 새로 연 차수를 바로 보게 한다
+    const info = await fetchSurveys().catch(() => null);
+    if (info?.active_recording) {
+      selectedSurveyRef.current = info.active;
+      setSelectedSurveyState(info.active);
+      await ensureLoaded(info.active);
+      flushBatch();
+    }
+    return true;
+  }, [ensureLoaded, flushBatch, refreshSites, refreshSurveys]);
+
+  /** 차수 닫기 — 진행 중이던 측정은 버려진다(30초 미만은 기록하지 않는다). */
+  const endSurvey = useCallback(async () => {
+    clientRef.current?.sendCommand('survey_end');
+    await new Promise((r) => setTimeout(r, 400));
+    await refreshSurveys().catch(() => {});
+  }, [refreshSurveys]);
   const injectStale = useCallback((seconds = 4) => clientRef.current?.injectStale(seconds), []);
 
   useEffect(() => {
@@ -221,6 +261,7 @@ export function useDashboardData() {
     flushBatch();
     client.start();
     refreshSurveys().catch((e) => console.warn('[useDashboardData] 차수 목록 조회 실패:', e));
+    refreshSites();
 
     return () => {
       clearInterval(fastTimer);
@@ -237,7 +278,11 @@ export function useDashboardData() {
     // 차수
     selectedSurvey,
     surveyOptions,
+    surveyRows,
+    siteOptions,
     selectSurvey,
+    startSurvey,
+    endSurvey,
     activeSurveyRef,
     storeRef,
     // 명령

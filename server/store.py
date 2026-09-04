@@ -4,8 +4,17 @@ store.py — SQLite 저장소.
 CLAUDE.md 3절: SQLite 쓰기는 **5초 단위 트랜잭션 배치**로 SD카드 마모를 최소화한다.
 그동안의 레코드는 메모리 버퍼에 모아 두었다가 한 트랜잭션으로 커밋한다.
 
-테이블은 CLAUDE.md 1절 측정 레코드 스키마 그대로 9컬럼이다(추가 컬럼 없음).
-    ts, survey, ec, tds, temp, depth, lat, lon, status
+테이블은 CLAUDE.md 1절 측정 레코드 스키마 그대로 13컬럼이다.
+    ts, survey, ec, tds, temp, depth, lat, lon, status, samples, ec_sd, tds_sd, temp_sd
+
+2026-08-28 스키마 변경: **한 수심 층에서 레코드 1건**(30초 측정의 대표값)으로 바뀌면서
+품질 컬럼 4개가 붙었다 — `samples`(대표값에 쓴 표본 수), `*_sd`(그 표본들의 표준편차).
+이전에는 1 Hz 로 30건이 쌓여 건수가 부풀었다.
+
+2026-08-29 추가: **surveys 테이블** — 차수는 조사지(site)와 날짜(survey_date)에 매인다.
+`round` 는 그 조사지·그 날짜 안에서만 1,2,3… 으로 올라간다. 저수지를 옮기면 다시 1차다
+(사용자 확정 2026-08-29: 다른 저수지에서 4·5·6차가 되는 것을 막는다).
+차수는 조작자가 "차수 시작"을 눌러야 생긴다 — **전원만 켜져 있다고 차수가 생기지 않는다.**
 
 2026-08-10 스키마 변경: `ph` → `tds` (pH 센서 제외, EC/TDS 일체형 확정).
 **기존 개발 DB 와 비호환이다.** 마이그레이션은 하지 않는다 — 구스키마를 발견하면
@@ -21,7 +30,8 @@ import time
 
 from config import COMMIT_INTERVAL_SECONDS, DB_PATH
 
-COLUMNS = ["ts", "survey", "ec", "tds", "temp", "depth", "lat", "lon", "status"]
+COLUMNS = ["ts", "survey", "ec", "tds", "temp", "depth", "lat", "lon", "status",
+           "samples", "ec_sd", "tds_sd", "temp_sd"]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (
@@ -33,10 +43,27 @@ CREATE TABLE IF NOT EXISTS records (
   depth   REAL    NOT NULL,
   lat     REAL,
   lon     REAL,
-  status  TEXT    NOT NULL
+  status  TEXT    NOT NULL,
+  samples INTEGER,           -- 대표값 산출에 쓴 표본 수 (0 이면 정상 표본 없음)
+  ec_sd   REAL,              -- 그 표본들의 표준편차 (표본 1개면 NULL)
+  tds_sd  REAL,
+  temp_sd REAL
 );
 CREATE INDEX IF NOT EXISTS idx_records_survey ON records(survey, ts);
+
+CREATE TABLE IF NOT EXISTS surveys (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  site        TEXT    NOT NULL,      -- 조사지(저수지) 이름 — 조작자가 입력
+  survey_date TEXT    NOT NULL,      -- 'YYYY-MM-DD' (현장 로컬 날짜)
+  round       INTEGER NOT NULL,      -- 그 site+date 안에서의 차수 (1,2,3…)
+  memo        TEXT,
+  started_at  INTEGER NOT NULL,
+  ended_at    INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_surveys_key ON surveys(site, survey_date, round);
 """
+
+SURVEY_COLUMNS = ["id", "site", "survey_date", "round", "memo", "started_at", "ended_at"]
 
 
 class IncompatibleSchemaError(RuntimeError):
@@ -62,8 +89,14 @@ class Store:
         if not rows:
             return                                   # 새 DB — 아래에서 생성한다
         cols = [r["name"] for r in rows]
-        if cols == COLUMNS:
+        srows = self._conn.execute("PRAGMA table_info(surveys)").fetchall()
+        scols = [r["name"] for r in srows]
+        if cols == COLUMNS and scols == SURVEY_COLUMNS:
             return
+        if cols == COLUMNS and not scols:
+            # records 는 최신인데 surveys 만 없다 — 조사지·차수를 알 수 없어 자동 변환하지 않는다.
+            print("\n[store] surveys 테이블이 없습니다 — 조사지/차수 정보를 만들 수 없어 "
+                  "기동을 중단합니다. 아래 안내대로 새 DB 로 시작하세요.", flush=True)
 
         legacy = "ph" in cols
         lines = [
@@ -74,6 +107,14 @@ class Store:
             f"    기존 컬럼: {', '.join(cols)}",
             f"    필요 컬럼: {', '.join(COLUMNS)}",
         ]
+        if list(cols[:9]) == COLUMNS[:9] and len(cols) == 9:
+            lines += [
+                "",
+                "    2026-08-28 부터 **한 수심 층에 레코드 1건**(30초 측정의 대표값)만 쌓고",
+                "    품질 컬럼(samples, ec_sd, tds_sd, temp_sd)을 함께 저장합니다.",
+                "    구스키마 DB 에는 1초마다 1건씩 쌓인 옛 레코드가 들어 있어 건수 의미가 달라",
+                "    섞어 쓰지 않습니다 (CLAUDE.md 6절).",
+            ]
         if legacy:
             lines += [
                 "",
@@ -132,8 +173,9 @@ class Store:
             cur = self._conn.cursor()
             cur.execute("BEGIN")
             cur.executemany(
-                "INSERT INTO records (ts,survey,ec,tds,temp,depth,lat,lon,status) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO records "
+                "(ts,survey,ec,tds,temp,depth,lat,lon,status,samples,ec_sd,tds_sd,temp_sd) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows,
             )
             self._conn.commit()
@@ -161,21 +203,64 @@ class Store:
         with self._lock:
             return self._conn.execute(sql, args).fetchall()
 
-    def next_survey(self):
-        """서버 재기동 시 이어쓰기: 기존 최대 차수 + 1."""
-        row = self._q("SELECT MAX(survey) AS m FROM records")[0]
+    # ── 차수(surveys) ────────────────────────────────────────────────────
+    def next_round(self, site, survey_date):
+        """그 조사지·그 날짜의 다음 차수 번호. 조사지나 날짜가 바뀌면 다시 1차다."""
+        row = self._q(
+            "SELECT MAX(round) AS m FROM surveys WHERE site=? AND survey_date=?",
+            (site, survey_date),
+        )[0]
         return (row["m"] or 0) + 1
 
+    def create_survey(self, site, survey_date, memo, started_at):
+        """차수 1건을 연다. 조작자가 '차수 시작'을 눌렀을 때만 호출된다."""
+        rnd = self.next_round(site, survey_date)
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(
+                "INSERT INTO surveys (site,survey_date,round,memo,started_at,ended_at) "
+                "VALUES (?,?,?,?,?,NULL)",
+                (site, survey_date, rnd, memo, started_at),
+            )
+            self._conn.commit()
+            sid = cur.lastrowid
+        return {"id": sid, "site": site, "survey_date": survey_date, "round": rnd,
+                "memo": memo, "started_at": started_at, "ended_at": None}
+
+    def end_survey(self, survey_id, ended_at):
+        with self._lock:
+            self._conn.execute("UPDATE surveys SET ended_at=? WHERE id=? AND ended_at IS NULL",
+                               (ended_at, survey_id))
+            self._conn.commit()
+
+    def survey_meta(self, survey_id):
+        rows = self._q("SELECT * FROM surveys WHERE id=?", (survey_id,))
+        return dict(rows[0]) if rows else None
+
     def surveys(self):
+        """차수 목록 — 조사지·날짜·차수 + 레코드 통계."""
         rows = self._q(
-            "SELECT survey, COUNT(*) AS count, MIN(ts) AS start_ts, MAX(ts) AS end_ts, "
-            "SUM(status='fault') AS fault "
-            "FROM records GROUP BY survey ORDER BY survey"
+            "SELECT s.id AS survey, s.site, s.survey_date, s.round, s.memo, "
+            "       s.started_at, s.ended_at, "
+            "       COUNT(r.ts) AS count, MIN(r.ts) AS start_ts, MAX(r.ts) AS end_ts, "
+            "       COALESCE(SUM(r.status='fault'),0) AS fault, "
+            "       COUNT(DISTINCT r.lat || ',' || r.lon) AS stations "
+            "FROM surveys s LEFT JOIN records r ON r.survey = s.id "
+            "GROUP BY s.id ORDER BY s.survey_date, s.site, s.round"
         )
         return [dict(r) for r in rows]
 
+    def recent_sites(self, limit=12):
+        """최근에 쓴 조사지 이름 — 헤더 입력란의 자동완성 목록."""
+        rows = self._q(
+            "SELECT site, MAX(started_at) AS last FROM surveys "
+            "GROUP BY site ORDER BY last DESC LIMIT ?", (int(limit),)
+        )
+        return [r["site"] for r in rows]
+
     def records(self, survey, limit=None):
-        sql = ("SELECT ts,survey,ec,tds,temp,depth,lat,lon,status FROM records "
+        sql = ("SELECT ts,survey,ec,tds,temp,depth,lat,lon,status,"
+               "samples,ec_sd,tds_sd,temp_sd FROM records "
                "WHERE survey=? ORDER BY ts")
         args = [survey]
         if limit:

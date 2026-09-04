@@ -2,6 +2,9 @@
  * panels/map.js — 위성 지도(MapLibre GL) + deck.gl 오버레이(현재 위치 · 이동 궤적).
  *
  * CLAUDE.md 3절: 지도 궤적은 3초 배치로만 갱신한다.
+ *
+ * 측정 지점 마커(2026-08-28 추가): stations.js 가 만든 지점 목록을 그대로 받아
+ * 3D 히트맵과 **같은 id** 로 그린다. 마커를 누르면 히트맵 막대가 함께 강조된다.
  */
 
 import maplibregl from 'maplibre-gl';
@@ -28,9 +31,36 @@ export function createMapPanel(containerId) {
   let trail = [];        // [[lon, lat], ...]
   let current = null;    // 최신 레코드
   let staleFlag = false;
+  let stations = [];     // stations.js 의 지점 목록 (히트맵과 공유)
+  let selectedId = null;
+  let stationClickCb = null;
 
   function buildLayers() {
     const layers = [];
+
+    // 측정 지점 — 히트맵과 클릭 하이라이트를 공유한다.
+    if (stations.length) {
+      layers.push(new ScatterplotLayer({
+        id: 'stations',
+        data: stations,
+        getPosition: (d) => [d.lon, d.lat],
+        radiusUnits: 'pixels',
+        getRadius: (d) => (d.id === selectedId ? 11 : 7),
+        getFillColor: (d) => (d.id === selectedId ? [255, 212, 0, 235] : [63, 143, 203, 205]),
+        stroked: true,
+        lineWidthUnits: 'pixels',
+        getLineWidth: (d) => (d.id === selectedId ? 3 : 1.5),
+        getLineColor: (d) => (d.id === selectedId ? [15, 43, 61] : [255, 255, 255]),
+        pickable: true,
+        onClick: ({ object }) => {
+          if (!object || !stationClickCb) return false;
+          stationClickCb(object.id === selectedId ? null : object.id);
+          return true;
+        },
+        updateTriggers: { getRadius: selectedId, getFillColor: selectedId,
+                          getLineWidth: selectedId, getLineColor: selectedId }
+      }));
+    }
 
     if (trail.length > 1) {
       layers.push(new PathLayer({
@@ -91,6 +121,18 @@ export function createMapPanel(containerId) {
       staleFlag = isStale;
       refresh();
     },
+    /** 3초 배치로 호출: 측정 지점 목록 교체 (stations.js 결과 그대로) */
+    setStations(list) {
+      stations = list ?? [];
+      refresh();
+    },
+    /** 선택된 지점 id — 히트맵 클릭으로도 바뀐다 */
+    setSelected(id) {
+      if (selectedId === id) return;
+      selectedId = id;
+      refresh();
+    },
+    onStationClick(cb) { stationClickCb = cb; },
     follow(lon, lat) { map.easeTo({ center: [lon, lat], duration: 900 }); },
     basemapLabel: basemapLabel(),
     resize() { map.resize(); }

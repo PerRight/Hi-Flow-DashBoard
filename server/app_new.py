@@ -20,6 +20,8 @@ import asyncio
 import csv
 import io
 import json
+import re
+from urllib.parse import quote
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -172,6 +174,16 @@ async def records(survey: int = Query(...), limit: int | None = None):
     return {"survey": survey, "count": len(rows), "records": rows}
 
 
+def _disposition(name, ascii_name, ext):
+    """Content-Disposition 한 줄 — ASCII 대체 이름 + UTF-8 원본 이름(RFC 5987).
+
+    HTTP 헤더는 latin-1 로만 인코딩된다. 한글 파일명을 raw 로 넣으면 응답 생성 단계에서
+    UnicodeEncodeError 가 나 500 이 된다 (2026-09-03 실제로 겪은 버그).
+    """
+    return (f'attachment; filename="{ascii_name}.{ext}"; '
+            f"filename*=UTF-8''{quote(f'{name}.{ext}')}")
+
+
 @app.get("/export")
 async def export(survey: int = Query(...), format: str = "csv"):
     """조사 종료 후 백업용 (CLAUDE.md 6절)."""
@@ -188,8 +200,15 @@ async def export(survey: int = Query(...), format: str = "csv"):
         r["survey_date"] = meta.get("survey_date")
         r["round"] = meta.get("round")
     out_cols = head + COLUMNS
+    # 파일명: 한글 조사지 이름을 그대로 쓰되, **HTTP 헤더는 ASCII 만 담을 수 있다.**
+    # 한글을 raw 로 넣으면 starlette 이 latin-1 인코딩에 실패해 500 이 난다(2026-09-03 수정).
+    # RFC 5987 형식으로 filename*(UTF-8 퍼센트 인코딩) 을 주고, 구형 클라이언트용
+    # ASCII 대체 이름을 filename= 으로 함께 보낸다.
     name = f"{meta.get('site') or 'survey'}_{meta.get('survey_date') or ''}_{meta.get('round') or survey}차"
-    name = "".join(c for c in name if c.isalnum() or c in "-_가-힣.").strip("_") or f"survey_{survey}"
+    name = re.sub(r"[^\w가-힣.\-]+", "_", name).strip("_") or f"survey_{survey}"
+    # ASCII 대체 이름은 차수마다 달라야 한다 — 조사지가 달라도 겹치지 않게 id 를 넣는다.
+    ascii_name = (f"survey{survey}_{(meta.get('survey_date') or '').replace('-', '')}"
+                  f"_r{meta.get('round') or 1}")
 
     fmt = format.lower()
     if fmt == "csv":
@@ -201,7 +220,7 @@ async def export(survey: int = Query(...), format: str = "csv"):
         data = buf.getvalue().encode("utf-8-sig")
         return Response(
             content=data, media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{name}.csv"'},
+            headers={"Content-Disposition": _disposition(name, ascii_name, "csv")},
         )
 
     if fmt == "xlsx":
@@ -221,7 +240,7 @@ async def export(survey: int = Query(...), format: str = "csv"):
         return Response(
             content=bio.getvalue(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{name}.xlsx"'},
+            headers={"Content-Disposition": _disposition(name, ascii_name, "xlsx")},
         )
 
     raise HTTPException(status_code=400, detail="format 은 csv 또는 xlsx")

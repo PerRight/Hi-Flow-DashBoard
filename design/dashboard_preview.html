@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수중드론 대시보드 — 3D 히트맵 · GPS 궤적 미리보기</title>
+<style>
+:root{
+  --brand-100:#DCEFFF; --brand-200:#BCE0FF; --brand-300:#96D0FF;
+  --brand-400:#6DB4EC; --brand-500:#3F8FCB; --brand-600:#2A6A9C; --brand-700:#12405F;
+  --bg-app:#F2F2F2; --card:#FFFFFF; --sunken:#F7F8F9; --border:#E1E4E6;
+  --t-strong:#0F2B3D; --t-body:#294455; --t-dim:#5D7A8C;
+  --ok:#0E8F5F; --caution:#B26A00; --danger:#C62828; --probe:#FFD400;
+  --r-card:12px; --sh:0 1px 2px rgba(15,43,61,.05), 0 3px 10px rgba(15,43,61,.07);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg-app); color:var(--t-body); display:flex; flex-direction:column;
+  font-family:Pretendard,"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif; font-size:14px;
+}
+.num{font-variant-numeric:tabular-nums}
+header.topbar{
+  flex:0 0 auto; height:60px; display:flex; align-items:center; justify-content:space-between;
+  gap:16px; padding:0 20px; background:var(--brand-300); border-bottom:1px solid var(--brand-200);
+}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+.brand-title{font-size:17px;font-weight:700;color:var(--brand-700);letter-spacing:-.02em}
+.brand-site{font-size:12px;color:#3A5B70;white-space:nowrap}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.seg{display:flex;background:#fff;border:1px solid var(--brand-500);border-radius:8px;overflow:hidden}
+.seg button{
+  font:inherit;font-size:12px;font-weight:700;border:0;background:transparent;color:var(--brand-600);
+  padding:6px 11px;cursor:pointer;border-right:1px solid var(--brand-200);
+}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--brand-100);color:var(--brand-700)}
+.seg button:disabled{opacity:.4;cursor:default}
+main{flex:1 1 auto;display:grid;gap:14px;padding:14px;min-height:0;
+  grid-template-columns:1.25fr 1fr}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r-card);
+  box-shadow:var(--sh);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.panel-title{
+  flex:0 0 auto;margin:0;padding:12px 14px;font-size:14px;font-weight:700;color:var(--t-strong);
+  background:var(--sunken);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.hint{font-size:11px;font-weight:400;color:var(--t-dim)}
+.panel-body{flex:1 1 auto;display:flex;flex-direction:column;gap:8px;padding:12px 14px;min-height:0}
+.plot{flex:1 1 auto;min-height:0;border-radius:8px;border:1px solid var(--border);background:#FCFCFB;
+  position:relative;display:flex}
+svg{flex:1 1 auto;min-height:0;display:block}
+#heat{cursor:grab;touch-action:none}
+#heat.drag{cursor:grabbing}
+svg text{font-family:inherit}
+.legend{flex:0 0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sw{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t-dim);
+  font-variant-numeric:tabular-nums}
+.sw b{width:12px;height:12px;border-radius:3px;display:inline-block}
+.tip{
+  position:absolute;pointer-events:none;z-index:5;background:rgba(255,255,255,.97);
+  border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:11px;line-height:1.6;
+  color:var(--t-body);box-shadow:var(--sh);white-space:nowrap;
+}
+.tip b{color:var(--t-strong);font-variant-numeric:tabular-nums}
+.tip .dim{color:var(--t-dim);font-size:10px}
+.corner{position:absolute;right:10px;top:8px;font-size:10px;color:var(--t-dim);pointer-events:none}
+footer{
+  flex:0 0 auto;display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+  padding:8px 20px;background:var(--card);border-top:1px solid var(--border);
+  font-size:11px;color:var(--t-dim);
+}
+footer .spacer{flex:1 1 auto}
+.note{margin:0;font-size:11px;color:var(--t-dim)}
+@media (max-width:1100px){
+  main{grid-template-columns:1fr;grid-template-rows:minmax(460px,1fr) minmax(420px,1fr)}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-title">수중드론 수질측정 대시보드</span>
+    <span class="brand-site">세종 용암저수지 · 2차 조사 (미리보기)</span>
+  </div>
+  <div class="topbar-right">
+    <div class="seg" id="metric-seg">
+      <button data-metric="ec" aria-pressed="true">EC</button>
+      <button data-metric="tds" aria-pressed="false">TDS</button>
+    </div>
+    <div class="seg" id="depth-seg">
+      <button data-depth="all" aria-pressed="true">전체 (3층)</button>
+      <button data-depth="0.5" aria-pressed="false">0.5 m</button>
+      <button data-depth="1.0" aria-pressed="false">1.0 m</button>
+      <button data-depth="1.5" aria-pressed="false">1.5 m</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2 class="panel-title">
+      <span>3D 히트맵 · <span id="heat-metric">EC</span></span>
+      <span class="hint" id="heat-hint"></span>
+    </h2>
+    <div class="panel-body">
+      <div class="plot">
+        <svg id="heat"></svg>
+        <div class="corner">드래그로 회전 · 막대 클릭으로 지점 선택</div>
+        <div class="tip" id="heat-tip" style="display:none"></div>
+      </div>
+      <div class="legend" id="heat-legend"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">
+      <span>GPS · 이동 궤적</span>
+      <span class="hint" id="gps-hint"></span>
+    </h2>
+    <div class="panel-body">
+      <div class="plot">
+        <svg id="gps"></svg>
+        <div class="corner">측정 지점 클릭으로 선택</div>
+        <div class="tip" id="gps-tip" style="display:none"></div>
+      </div>
+      <p class="note" id="gps-note"></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="foot-left"></span>
+  <span class="spacer"></span>
+  <span>목업 스트림으로 생성한 실제 서버 레코드 · 지도 타일 없이 좌표만 그린 미리보기</span>
+</footer>
+
+<script>
+const DATA = {"records":[{"ec":166.85,"tds":83.1,"temp":25.875,"depth":0.5,"lat":36.574153,"lon":127.220325,"status":"ok","samples":4,"ec_sd":1.287,"tds_sd":0.529,"temp_sd":0.34,"ts":1787919714},{"ec":172.375,"tds":85.725,"temp":25.275,"depth":1.0,"lat":36.574153,"lon":127.220325,"status":"ok","samples":4,"ec_sd":2.234,"tds_sd":1.271,"temp_sd":0.299,"ts":1787919724},{"ec":176.625,"tds":88.575,"temp":24.875,"depth":1.5,"lat":36.574153,"lon":127.220325,"status":"ok","samples":4,"ec_sd":2.717,"tds_sd":0.83,"temp_sd":0.206,"ts":1787919734},{"ec":169.025,"tds":83.975,"temp":25.95,"depth":0.5,"lat":36.574283,"lon":127.220595,"status":"ok","samples":4,"ec_sd":2.839,"tds_sd":1.652,"temp_sd":0.129,"ts":1787919763},{"ec":176.675,"tds":88.225,"temp":25.575,"depth":1.0,"lat":36.574283,"lon":127.220595,"status":"ok","samples":4,"ec_sd":2.661,"tds_sd":1.578,"temp_sd":0.189,"ts":1787919773},{"ec":181.45,"tds":90.0,"temp":24.65,"depth":1.5,"lat":36.574283,"lon":127.220595,"status":"ok","samples":2,"ec_sd":2.758,"tds_sd":1.838,"temp_sd":0.071,"ts":1787919783},{"ec":175.15,"tds":87.625,"temp":25.925,"depth":0.5,"lat":36.574403,"lon":127.220856,"status":"ok","samples":4,"ec_sd":2.903,"tds_sd":0.67,"temp_sd":0.05,"ts":1787919812},{"ec":178.975,"tds":89.4,"temp":25.475,"depth":1.0,"lat":36.574403,"lon":127.220856,"status":"ok","samples":4,"ec_sd":1.34,"tds_sd":1.273,"temp_sd":0.189,"ts":1787919822},{"ec":187.525,"tds":93.775,"temp":24.875,"depth":1.5,"lat":36.574403,"lon":127.220856,"status":"ok","samples":4,"ec_sd":3.199,"tds_sd":1.258,"temp_sd":0.15,"ts":1787919832},{"ec":181.4,"tds":90.3,"temp":25.825,"depth":0.5,"lat":36.574521,"lon":127.221091,"status":"ok","samples":4,"ec_sd":0.959,"tds_sd":0.97,"temp_sd":0.171,"ts":1787919861},{"ec":187.6,"tds":94.05,"temp":25.25,"depth":1.0,"lat":36.574521,"lon":127.221091,"status":"ok","samples":4,"ec_sd":2.79,"tds_sd":1.923,"temp_sd":0.208,"ts":1787919871},{"ec":192.1,"tds":96.85,"temp":24.675,"depth":1.5,"lat":36.574521,"lon":127.221091,"status":"ok","samples":4,"ec_sd":2.86,"tds_sd":1.266,"temp_sd":0.206,"ts":1787919881},{"ec":185.4,"tds":92.525,"temp":26.05,"depth":0.5,"lat":36.574641,"lon":127.221319,"status":"ok","samples":4,"ec_sd":1.447,"tds_sd":0.984,"temp_sd":0.404,"ts":1787919910},{"ec":191.65,"tds":95.325,"temp":25.275,"depth":1.0,"lat":36.574641,"lon":127.221319,"status":"ok","samples":4,"ec_sd":2.193,"tds_sd":1.305,"temp_sd":0.206,"ts":1787919920},{"ec":198.025,"tds":98.6,"temp":24.725,"depth":1.5,"lat":36.574641,"lon":127.221319,"status":"ok","samples":4,"ec_sd":2.1,"tds_sd":1.761,"temp_sd":0.34,"ts":1787919930},{"ec":187.725,"tds":93.8,"temp":25.7,"depth":0.5,"lat":36.574799,"lon":127.22151,"status":"ok","samples":4,"ec_sd":2.516,"tds_sd":1.431,"temp_sd":0.294,"ts":1787919959},{"ec":196.2,"tds":98.8,"temp":25.35,"depth":1.0,"lat":36.574799,"lon":127.22151,"status":"ok","samples":2,"ec_sd":2.546,"tds_sd":0.566,"temp_sd":0.354,"ts":1787919969},{"ec":200.85,"tds":100.025,"temp":24.475,"depth":1.5,"lat":36.574799,"lon":127.22151,"status":"ok","samples":4,"ec_sd":1.771,"tds_sd":1.081,"temp_sd":0.206,"ts":1787919979},{"ec":193.95,"tds":97.275,"temp":25.825,"depth":0.5,"lat":36.57494,"lon":127.221749,"status":"ok","samples":4,"ec_sd":1.792,"tds_sd":0.33,"temp_sd":0.443,"ts":1787920008},{"ec":201.875,"tds":100.6,"temp":25.2,"depth":1.0,"lat":36.57494,"lon":127.221749,"status":"ok","samples":4,"ec_sd":2.839,"tds_sd":2.002,"temp_sd":0.408,"ts":1787920018},{"ec":206.925,"tds":103.075,"temp":24.75,"depth":1.5,"lat":36.57494,"lon":127.221749,"status":"ok","samples":4,"ec_sd":3.083,"tds_sd":1.83,"temp_sd":0.3,"ts":1787920028},{"ec":198.75,"tds":98.85,"temp":26.0,"depth":0.5,"lat":36.575033,"lon":127.222019,"status":"ok","samples":4,"ec_sd":2.664,"tds_sd":2.098,"temp_sd":0.283,"ts":1787920057},{"ec":206.725,"tds":103.5,"temp":25.3,"depth":1.0,"lat":36.575033,"lon":127.222019,"status":"ok","samples":4,"ec_sd":2.387,"tds_sd":1.061,"temp_sd":0.294,"ts":1787920067},{"ec":212.2,"tds":105.9,"temp":24.4,"depth":1.5,"lat":36.575033,"lon":127.222019,"status":"ok","samples":1,"ec_sd":null,"tds_sd":null,"temp_sd":null,"ts":1787920077},{"ec":202.775,"tds":101.175,"temp":25.775,"depth":0.5,"lat":36.575134,"lon":127.22227,"status":"ok","samples":4,"ec_sd":2.665,"tds_sd":1.982,"temp_sd":0.386,"ts":1787920106},{"ec":208.2,"tds":104.35,"temp":25.275,"depth":1.0,"lat":36.575134,"lon":127.22227,"status":"ok","samples":4,"ec_sd":1.374,"tds_sd":0.592,"temp_sd":0.34,"ts":1787920116},{"ec":217.3,"tds":108.475,"temp":24.45,"depth":1.5,"lat":36.575134,"lon":127.22227,"status":"ok","samples":4,"ec_sd":1.447,"tds_sd":0.785,"temp_sd":0.265,"ts":1787920126},{"ec":211.425,"tds":106.15,"temp":25.75,"depth":0.5,"lat":36.575285,"lon":127.22249,"status":"ok","samples":4,"ec_sd":2.011,"tds_sd":0.545,"temp_sd":0.173,"ts":1787920155},{"ec":217.35,"tds":108.45,"temp":25.25,"depth":1.0,"lat":36.575285,"lon":127.22249,"status":"ok","samples":4,"ec_sd":1.31,"tds_sd":1.041,"temp_sd":0.265,"ts":1787920165},{"ec":221.65,"tds":110.95,"temp":24.725,"depth":1.5,"lat":36.575285,"lon":127.22249,"status":"ok","samples":4,"ec_sd":1.652,"tds_sd":1.318,"temp_sd":0.492,"ts":1787920175},{"ec":215.325,"tds":107.975,"temp":25.6,"depth":0.5,"lat":36.575441,"lon":127.222683,"status":"ok","samples":4,"ec_sd":2.172,"tds_sd":1.565,"temp_sd":0.231,"ts":1787920204},{"ec":221.467,"tds":111.267,"temp":25.233,"depth":1.0,"lat":36.575441,"lon":127.222683,"status":"ok","samples":3,"ec_sd":3.011,"tds_sd":1.662,"temp_sd":0.306,"ts":1787920214},{"ec":224.7,"tds":112.5,"temp":24.925,"depth":1.5,"lat":36.575441,"lon":127.222683,"status":"ok","samples":4,"ec_sd":2.174,"tds_sd":1.194,"temp_sd":0.222,"ts":1787920224}],"trail":[[127.220164,36.57403],[127.220223,36.574074],[127.220272,36.574114],[127.220325,36.574153],[127.220387,36.574189],[127.220456,36.574221],[127.220526,36.574253],[127.220595,36.574283],[127.220658,36.574312],[127.220726,36.574345],[127.220794,36.574371],[127.220856,36.574403],[127.220919,36.57444],[127.220981,36.574468],[127.221036,36.574497],[127.221091,36.574521],[127.22116,36.574557],[127.221218,36.574585],[127.221271,36.57461],[127.221319,36.574641],[127.221366,36.574678],[127.221417,36.574726],[127.221459,36.574762],[127.22151,36.574799],[127.221565,36.57484],[127.221628,36.574883],[127.221687,36.574914],[127.221749,36.57494],[127.221822,36.57497],[127.22188,36.574993],[127.221942,36.575013],[127.222019,36.575033],[127.222082,36.575052],[127.222147,36.575076],[127.222211,36.575102],[127.22227,36.575134],[127.222328,36.575174],[127.222388,36.575216],[127.222441,36.57525],[127.22249,36.575285],[127.222542,36.57532],[127.222595,36.575364],[127.222639,36.575404],[127.222683,36.575441]]};
+</script>
+
+<script>
+/* ── 설정: 대시보드 config.js 와 같은 값 ───────────────────────────────── */
+const GRID = 7;
+const DEPTHS = [0.5, 1.0, 1.5];
+const NORMAL_BLUE = '#2A78D6';
+const METRICS = {
+  ec:  { label: 'EC',  unit: 'µS/cm', normalMax: 280, dangerMin: 700 },
+  tds: { label: 'TDS', unit: 'ppm',   normalMax: 140, dangerMin: 350 }
+};
+const OVER = '#B26A00', DANGER = '#C62828';
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const shade = (hex, f) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${Math.round(((n >> 16) & 255) * f)},${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
+};
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}) => {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
+
+/* ── 측정 지점 집계 (stations.js 와 같은 규칙) ─────────────────────────── */
+function buildStations(records, metric) {
+  const pts = records.filter((r) => r.status === 'ok' && Number.isFinite(r[metric]));
+  if (!pts.length) return { bounds: null, list: [], byId: new Map() };
+  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+  for (const r of pts) {
+    minLat = Math.min(minLat, r.lat); maxLat = Math.max(maxLat, r.lat);
+    minLon = Math.min(minLon, r.lon); maxLon = Math.max(maxLon, r.lon);
+  }
+  const spanLat = Math.max(maxLat - minLat, 1e-7);
+  const spanLon = Math.max(maxLon - minLon, 1e-7);
+  const acc = new Map();
+  for (const r of pts) {
+    const i = clamp(Math.floor(((r.lon - minLon) / spanLon) * GRID), 0, GRID - 1);
+    const j = clamp(Math.floor(((r.lat - minLat) / spanLat) * GRID), 0, GRID - 1);
+    const id = `${i}|${j}`;
+    let st = acc.get(id);
+    if (!st) { st = { id, i, j, latSum: 0, lonSum: 0, n: 0, depths: {} }; acc.set(id, st); }
+    st.latSum += r.lat; st.lonSum += r.lon; st.n += 1;
+    const dk = r.depth.toFixed(1);
+    const cell = st.depths[dk] || (st.depths[dk] = { sum: 0, n: 0, v: 0, samples: 0, sd: null });
+    cell.sum += r[metric]; cell.n += 1; cell.v = cell.sum / cell.n;
+    cell.samples += r.samples || 0;
+    cell.sd = cell.n === 1 ? (r[`${metric}_sd`] ?? null) : null;
+  }
+  const list = [...acc.values()].map((s) => ({
+    id: s.id, i: s.i, j: s.j, lat: s.latSum / s.n, lon: s.lonSum / s.n, n: s.n, depths: s.depths
+  }));
+  return {
+    bounds: { minLat, maxLat, minLon, maxLon, spanLat, spanLon },
+    list, byId: new Map(list.map((s) => [s.id, s]))
+  };
+}
+const cellCenter = (b, i, j) => ({
+  lon: b.minLon + ((i + 0.5) / GRID) * b.spanLon,
+  lat: b.minLat + ((j + 0.5) / GRID) * b.spanLat
+});
+
+/* ── 화면 상태 ────────────────────────────────────────────────────────── */
+let metric = 'ec';
+let depth = 'all';
+let selected = null;
+let agg = buildStations(DATA.records, metric);
+let view = { az: -0.62, el: 0.52 };
+
+const heatSvg = document.getElementById('heat');
+const gpsSvg = document.getElementById('gps');
+const heatTip = document.getElementById('heat-tip');
+const gpsTip = document.getElementById('gps-tip');
+
+/* ── 3D 막대 히트맵 ───────────────────────────────────────────────────── */
+let bars = [];
+
+function drawHeat() {
+  const W = heatSvg.clientWidth || 700, H = heatSvg.clientHeight || 460;
+  heatSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  while (heatSvg.firstChild) heatSvg.removeChild(heatSvg.firstChild);
+  const cfg = METRICS[metric];
+
+  const w = Math.min((W - 165) / 2.9, H * 0.30);
+  const h = Math.min(H * 0.40, 280);
+  const cx = W / 2 - 10;
+  const cy = (H - (2 * w * Math.sin(view.el) + h)) / 2 + w * Math.sin(view.el) + 12;
+  const ca = Math.cos(view.az), sa = Math.sin(view.az);
+  const project = (x, y, z, lift = 0) => {
+    const rx = x * ca - y * sa, ry = x * sa + y * ca;
+    return [cx + rx * w, cy + ry * w * Math.sin(view.el) + z * h - lift];
+  };
+  const barMax = (h / (DEPTHS.length - 1)) * 0.88;
+  const zOf = (d) => (d - DEPTHS[0]) / (DEPTHS[DEPTHS.length - 1] - DEPTHS[0]);
+  const showAll = depth === 'all';
+
+  // 수심 평면 3장 + 격자
+  for (const d of DEPTHS) {
+    const z = zOf(d);
+    const on = showAll || Math.abs(d - Number(depth)) < 1e-6;
+    const corner = [[-1.08, -1.08], [1.08, -1.08], [1.08, 1.08], [-1.08, 1.08]]
+      .map(([x, y]) => project(x, y, z).join(',')).join(' ');
+    heatSvg.appendChild(el('polygon', {
+      points: corner, fill: on ? '#F4F7FA' : '#FAFAFA',
+      stroke: '#E1E0D9', 'stroke-width': 1, opacity: on ? 0.92 : 0.45
+    }));
+    let grid = '';
+    for (let s = 0; s <= GRID; s += 1) {
+      const u = -1.08 + (s / GRID) * 2.16;
+      grid += `M${project(u, -1.08, z)} L${project(u, 1.08, z)} `
+            + `M${project(-1.08, u, z)} L${project(1.08, u, z)} `;
+    }
+    heatSvg.appendChild(el('path', {
+      d: grid, stroke: '#E8E7E0', 'stroke-width': 0.7, fill: 'none', opacity: on ? 1 : 0.5
+    }));
+    const lp = project(-1.14, -1.14, z);
+    const t = el('text', {
+      x: lp[0] - 6, y: lp[1] + 4, 'font-size': 11, 'font-weight': 700,
+      fill: on ? '#12405F' : '#B9C3CA', 'text-anchor': 'end',
+      stroke: '#FCFCFB', 'stroke-width': 3, 'paint-order': 'stroke'
+    });
+    t.textContent = `${d.toFixed(1)} m`;
+    heatSvg.appendChild(t);
+  }
+  for (const [x, y] of [[-1.08, -1.08], [1.08, -1.08], [1.08, 1.08], [-1.08, 1.08]]) {
+    const p1 = project(x, y, 0), p2 = project(x, y, 1);
+    heatSvg.appendChild(el('line', {
+      x1: p1[0], y1: p1[1], x2: p2[0], y2: p2[1], stroke: '#E1E0D9', 'stroke-width': 1
+    }));
+  }
+
+  // 막대 — 각 수심 층 바닥에서 값 높이만큼
+  bars = [];
+  const cellHalf = 1 / GRID;
+  for (const st of agg.list) {
+    const x = (st.i / (GRID - 1)) * 2 - 1;
+    const y = (st.j / (GRID - 1)) * 2 - 1;
+    for (const [dk, cell] of Object.entries(st.depths)) {
+      const d = Number(dk), z = zOf(d);
+      const on = showAll || Math.abs(d - Number(depth)) < 1e-6;
+      const hh = clamp(cell.v / cfg.dangerMin, 0, 1) * barMax;
+      const color = cell.v > cfg.dangerMin ? DANGER : (cell.v > cfg.normalMax ? OVER : NORMAL_BLUE);
+      const s = cellHalf * 0.78;
+      const base = [[-s, -s], [s, -s], [s, s], [-s, s]].map(([dx, dy]) => project(x + dx, y + dy, z));
+      const top = [[-s, -s], [s, -s], [s, s], [-s, s]].map(([dx, dy]) => project(x + dx, y + dy, z, hh));
+      const c = project(x, y, z);
+      bars.push({ id: st.id, st, d, v: cell.v, n: cell.n, samples: cell.samples, sd: cell.sd,
+                  on, color, base, top, cx: c[0], cy: c[1], topY: c[1] - hh });
+    }
+  }
+  bars.sort((a, b) => a.cy - b.cy);
+
+  for (const b of bars) {
+    const isSel = selected && b.id === selected;
+    const g = el('g', { opacity: b.on ? (selected && !isSel ? 0.3 : 1) : 0.12 });
+    for (let k = 0; k < 4; k += 1) {
+      const k2 = (k + 1) % 4;
+      g.appendChild(el('polygon', {
+        points: [b.base[k], b.base[k2], b.top[k2], b.top[k]].map((p) => p.join(',')).join(' '),
+        fill: shade(b.color, k % 2 ? 0.72 : 0.87)
+      }));
+    }
+    g.appendChild(el('polygon', {
+      points: b.top.map((p) => p.join(',')).join(' '), fill: b.color,
+      stroke: isSel ? '#0F2B3D' : 'rgba(15,43,61,.18)', 'stroke-width': isSel ? 2 : 0.7
+    }));
+    if (isSel) {
+      g.appendChild(el('polygon', {
+        points: b.base.map((p) => p.join(',')).join(' '), fill: 'none',
+        stroke: '#0F2B3D', 'stroke-width': 1.6, 'stroke-dasharray': '3 2'
+      }));
+    }
+    heatSvg.appendChild(g);
+  }
+
+  // 축 눈금 — 실제 위경도
+  if (agg.bounds) {
+    const idx = [0, Math.floor((GRID - 1) / 2), GRID - 1];
+    for (const i of idx) {
+      const p = project((i / (GRID - 1)) * 2 - 1, 1.22, 1);
+      const t = el('text', {
+        x: clamp(p[0], 34, W - 34), y: p[1] + 4, 'font-size': 9.5, fill: '#7E8C95',
+        'text-anchor': 'middle', stroke: '#FCFCFB', 'stroke-width': 3, 'paint-order': 'stroke'
+      });
+      t.textContent = cellCenter(agg.bounds, i, 0).lon.toFixed(5);
+      heatSvg.appendChild(t);
+    }
+    for (const j of idx) {
+      const p = project(1.22, (j / (GRID - 1)) * 2 - 1, 1);
+      const t = el('text', {
+        x: Math.min(p[0], W - 62), y: p[1] + 4, 'font-size': 9.5, fill: '#7E8C95',
+        'text-anchor': 'start', stroke: '#FCFCFB', 'stroke-width': 3, 'paint-order': 'stroke'
+      });
+      t.textContent = cellCenter(agg.bounds, 0, j).lat.toFixed(5);
+      heatSvg.appendChild(t);
+    }
+  }
+  const axisName = el('text', { x: 12, y: H - 10, 'font-size': 10.5, 'font-weight': 700, fill: '#7E8C95' });
+  axisName.textContent = 'X = 경도(동서) · Y = 위도(남북) · Z = 수심';
+  heatSvg.appendChild(axisName);
+}
+
+function pickBar(sx, sy) {
+  for (let n = bars.length - 1; n >= 0; n -= 1) {
+    const b = bars[n];
+    if (!b.on) continue;
+    if (Math.abs(b.cx - sx) < 12 && sy <= b.cy + 7 && sy >= b.topY - 9) return b;
+  }
+  return null;
+}
+
+/* ── GPS 궤적 (지도 타일 없이 좌표만) ─────────────────────────────────── */
+let gpsPts = [];
+
+function drawGps() {
+  const W = gpsSvg.clientWidth || 500, H = gpsSvg.clientHeight || 420;
+  gpsSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  while (gpsSvg.firstChild) gpsSvg.removeChild(gpsSvg.firstChild);
+
+  const all = DATA.trail.concat(agg.list.map((s) => [s.lon, s.lat]));
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  for (const [lo, la] of all) {
+    minLon = Math.min(minLon, lo); maxLon = Math.max(maxLon, lo);
+    minLat = Math.min(minLat, la); maxLat = Math.max(maxLat, la);
+  }
+  // 위도에 따라 경도 1도의 실제 거리가 줄어든다 — 가로세로 축척을 맞춘다.
+  const midLat = (minLat + maxLat) / 2;
+  const kx = Math.cos((midLat * Math.PI) / 180);
+  const pad = 34;
+  const spanX = Math.max((maxLon - minLon) * kx, 1e-7);
+  const spanY = Math.max(maxLat - minLat, 1e-7);
+  const scale = Math.min((W - pad * 2) / spanX, (H - pad * 2) / spanY);
+  const ox = (W - spanX * scale) / 2, oy = (H - spanY * scale) / 2;
+  const px = (lon) => ox + (lon - minLon) * kx * scale;
+  const py = (lat) => H - oy - (lat - minLat) * scale;   // 위도는 위쪽이 큰 값
+
+  gpsSvg.appendChild(el('rect', { x: 0, y: 0, width: W, height: H, fill: '#EAF3FA' }));
+  // 옅은 격자 (배경 참고선)
+  let grid = '';
+  for (let g = 0; g <= 6; g += 1) {
+    grid += `M${(W / 6) * g} 0 V${H} M0 ${(H / 6) * g} H${W} `;
+  }
+  gpsSvg.appendChild(el('path', { d: grid, stroke: '#D6E5F1', 'stroke-width': 1, fill: 'none' }));
+
+  // 보트 이동 궤적
+  const path = DATA.trail.map(([lo, la], n) => `${n ? 'L' : 'M'}${px(lo).toFixed(1)} ${py(la).toFixed(1)}`).join(' ');
+  gpsSvg.appendChild(el('path', {
+    d: path, stroke: '#3F8FCB', 'stroke-width': 2.5, fill: 'none',
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0.85
+  }));
+
+  // 측정 지점
+  gpsPts = [];
+  for (const st of agg.list) {
+    const x = px(st.lon), y = py(st.lat);
+    const isSel = selected && st.id === selected;
+    gpsPts.push({ st, x, y });
+    const g = el('g', { style: 'cursor:pointer' });
+    g.appendChild(el('circle', {
+      cx: x, cy: y, r: isSel ? 11 : 7,
+      fill: isSel ? '#FFD400' : '#3F8FCB',
+      stroke: isSel ? '#0F2B3D' : '#FFFFFF', 'stroke-width': isSel ? 3 : 1.5,
+      opacity: selected && !isSel ? 0.45 : 1
+    }));
+    gpsSvg.appendChild(g);
+  }
+
+  // 출발 · 현재 위치
+  if (DATA.trail.length) {
+    // 라벨이 패널 밖으로 잘리지 않게, 오른쪽 끝에 가까우면 왼쪽에 붙인다.
+    const label = (x, y, text, bold) => {
+      const flip = x > W - 70;
+      const t = el('text', {
+        x: flip ? x - 10 : x + 10, y, 'font-size': 10,
+        fill: bold ? '#0F2B3D' : '#5D7A8C', 'font-weight': bold ? 700 : 400,
+        'text-anchor': flip ? 'end' : 'start',
+        stroke: '#EAF3FA', 'stroke-width': 3, 'paint-order': 'stroke'
+      });
+      t.textContent = text;
+      gpsSvg.appendChild(t);
+    };
+    const [slo, sla] = DATA.trail[0], [elo, ela] = DATA.trail[DATA.trail.length - 1];
+    label(px(slo), py(sla) - 8, '출발', false);
+    gpsSvg.appendChild(el('circle', { cx: px(elo), cy: py(ela), r: 6, fill: '#FFFFFF',
+      stroke: '#0F2B3D', 'stroke-width': 2 }));
+    label(px(elo), py(ela) + 4, '현재 위치', true);
+  }
+
+  // 축척 막대 (100 m 기준, 화면에 맞게 자동 선택)
+  const mPerDegLat = 111320;
+  const targets = [25, 50, 100, 200, 500];
+  const want = (W - pad * 2) * 0.28;
+  let best = targets[0];
+  for (const t of targets) if ((t / mPerDegLat) * scale <= want) best = t;
+  const barLen = (best / mPerDegLat) * scale;
+  const bx = W - 18 - barLen, by = H - 18;
+  gpsSvg.appendChild(el('line', { x1: bx, y1: by, x2: bx + barLen, y2: by,
+    stroke: '#0F2B3D', 'stroke-width': 2 }));
+  gpsSvg.appendChild(el('line', { x1: bx, y1: by - 4, x2: bx, y2: by + 4, stroke: '#0F2B3D', 'stroke-width': 2 }));
+  gpsSvg.appendChild(el('line', { x1: bx + barLen, y1: by - 4, x2: bx + barLen, y2: by + 4,
+    stroke: '#0F2B3D', 'stroke-width': 2 }));
+  const sl = el('text', { x: bx + barLen / 2, y: by - 8, 'font-size': 10, 'text-anchor': 'middle',
+    fill: '#0F2B3D', stroke: '#EAF3FA', 'stroke-width': 3, 'paint-order': 'stroke' });
+  sl.textContent = `${best} m`;
+  gpsSvg.appendChild(sl);
+
+  // 조사 범위 안내
+  const wm = ((maxLon - minLon) * kx * mPerDegLat).toFixed(0);
+  const hm = ((maxLat - minLat) * mPerDegLat).toFixed(0);
+  const merged = agg.list.length;
+  const stations = new Set(DATA.records.map((r) => `${r.lat}|${r.lon}`)).size;
+  document.getElementById('gps-note').textContent =
+    `측정 지점 ${stations}곳 · 조사 범위 약 ${wm} m × ${hm} m · 파란 선 = 보트 이동 궤적`
+    + (merged < stations ? ` · 히트맵에서는 7×7 격자로 접혀 ${merged}칸` : '');
+}
+
+/* ── 텍스트 갱신 ──────────────────────────────────────────────────────── */
+function refreshText() {
+  const cfg = METRICS[metric];
+  document.getElementById('heat-metric').textContent = cfg.label;
+
+  let shown = 0;
+  for (const st of agg.list) {
+    for (const [dk, cell] of Object.entries(st.depths)) {
+      if (depth === 'all' || Math.abs(Number(dk) - Number(depth)) < 1e-6) shown += cell.n;
+    }
+  }
+  const sel = selected ? agg.byId.get(selected) : null;
+  document.getElementById('heat-hint').textContent =
+    `${depth === 'all' ? '3층 전체' : depth + ' m'} · ${shown}건`
+    + (sel ? ` · 선택 ${sel.lat.toFixed(5)}, ${sel.lon.toFixed(5)}` : '');
+  document.getElementById('gps-hint').textContent = sel ? '선택된 지점 강조 중' : '';
+
+  const lg = document.getElementById('heat-legend');
+  lg.innerHTML =
+    `<span class="sw"><b style="background:${NORMAL_BLUE}"></b> 정상 0~${cfg.normalMax} ${cfg.unit}</span>`
+    + `<span class="sw"><b style="background:${OVER}"></b> 주의 ${cfg.normalMax}~${cfg.dangerMin}</span>`
+    + `<span class="sw"><b style="background:${DANGER}"></b> 위험 &gt;${cfg.dangerMin}</span>`
+    + `<span class="sw">막대 높이 = 값 비례(0~${cfg.dangerMin} ${cfg.unit})</span>`;
+
+  const vals = DATA.records.filter((r) => r.status === 'ok').map((r) => r[metric]);
+  const lo = Math.min(...vals).toFixed(1), hi = Math.max(...vals).toFixed(1);
+  const stationCount = new Set(DATA.records.map((r) => `${r.lat}|${r.lon}`)).size;
+  document.getElementById('foot-left').textContent =
+    `측정 지점 ${stationCount}곳 × 수심 3층 = 레코드 ${DATA.records.length}건 (층당 1건) · `
+    + `${cfg.label} ${lo}~${hi} ${cfg.unit} · 각 레코드는 30초 측정의 뒤 20초 평균`;
+}
+
+function redraw() { drawHeat(); drawGps(); refreshText(); }
+
+/* ── 상호작용 ─────────────────────────────────────────────────────────── */
+let drag = null, moved = false;
+
+heatSvg.addEventListener('pointerdown', (e) => {
+  drag = { x: e.clientX, y: e.clientY, az: view.az, el: view.el };
+  moved = false;
+  heatSvg.setPointerCapture?.(e.pointerId);
+  heatSvg.classList.add('drag');
+});
+heatSvg.addEventListener('pointermove', (e) => {
+  const r = heatSvg.getBoundingClientRect();
+  if (drag) {
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) moved = true;
+    view = {
+      az: drag.az + (e.clientX - drag.x) * 0.008,
+      el: clamp(drag.el + (e.clientY - drag.y) * 0.005, 0.12, 1.35)
+    };
+    heatTip.style.display = 'none';
+    drawHeat();
+    return;
+  }
+  const b = pickBar(e.clientX - r.left, e.clientY - r.top);
+  if (!b) { heatTip.style.display = 'none'; return; }
+  const cfg = METRICS[metric];
+  heatTip.innerHTML =
+    `<b>${b.v.toFixed(1)}</b> ${cfg.unit}${b.sd !== null ? ` ± ${b.sd.toFixed(1)}` : ''}`
+    + ` · 수심 ${b.d.toFixed(1)} m<br>${b.st.lat.toFixed(5)}, ${b.st.lon.toFixed(5)}<br>`
+    + `${b.n > 1 ? `레코드 ${b.n}건 평균 · ` : ''}30초 측정 표본 ${b.samples}개<br>`
+    + `<span class="dim">클릭하면 지도에도 함께 표시됩니다</span>`;
+  heatTip.style.display = 'block';
+  heatTip.style.left = `${Math.min(e.clientX - r.left + 14, r.width - 210)}px`;
+  heatTip.style.top = `${e.clientY - r.top + 12}px`;
+});
+const endDrag = () => { drag = null; heatSvg.classList.remove('drag'); };
+heatSvg.addEventListener('pointerup', endDrag);
+heatSvg.addEventListener('pointercancel', endDrag);
+heatSvg.addEventListener('pointerleave', () => { endDrag(); heatTip.style.display = 'none'; });
+heatSvg.addEventListener('click', (e) => {
+  if (moved) return;
+  const r = heatSvg.getBoundingClientRect();
+  const b = pickBar(e.clientX - r.left, e.clientY - r.top);
+  selected = b ? (b.id === selected ? null : b.id) : null;
+  redraw();
+});
+
+gpsSvg.addEventListener('pointermove', (e) => {
+  const r = gpsSvg.getBoundingClientRect();
+  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const hit = gpsPts.find((p) => Math.hypot(p.x - sx, p.y - sy) < 12);
+  if (!hit) { gpsTip.style.display = 'none'; return; }
+  const cfg = METRICS[metric];
+  const rows = DEPTHS.map((d) => {
+    const c = hit.st.depths[d.toFixed(1)];
+    return c ? `${d.toFixed(1)} m · <b>${c.v.toFixed(1)}</b> ${cfg.unit}` : `${d.toFixed(1)} m · —`;
+  }).join('<br>');
+  gpsTip.innerHTML = `${hit.st.lat.toFixed(5)}, ${hit.st.lon.toFixed(5)}<br>${rows}`;
+  gpsTip.style.display = 'block';
+  gpsTip.style.left = `${Math.min(sx + 14, r.width - 160)}px`;
+  gpsTip.style.top = `${Math.min(sy + 12, r.height - 80)}px`;
+});
+gpsSvg.addEventListener('pointerleave', () => { gpsTip.style.display = 'none'; });
+gpsSvg.addEventListener('click', (e) => {
+  const r = gpsSvg.getBoundingClientRect();
+  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const hit = gpsPts.find((p) => Math.hypot(p.x - sx, p.y - sy) < 12);
+  selected = hit ? (hit.st.id === selected ? null : hit.st.id) : null;
+  redraw();
+});
+
+document.getElementById('metric-seg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  metric = b.dataset.metric;
+  [...e.currentTarget.children].forEach((c) => c.setAttribute('aria-pressed', String(c === b)));
+  agg = buildStations(DATA.records, metric);
+  if (selected && !agg.byId.has(selected)) selected = null;
+  redraw();
+});
+document.getElementById('depth-seg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  depth = b.dataset.depth;
+  [...e.currentTarget.children].forEach((c) => c.setAttribute('aria-pressed', String(c === b)));
+  redraw();
+});
+
+window.addEventListener('resize', redraw);
+redraw();
+
+</script>
+</body>
+</html>

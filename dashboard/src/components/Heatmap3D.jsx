@@ -1,71 +1,44 @@
 /**
- * Heatmap3D.jsx — (X, Y, 수심) 3차원 산점 히트맵.
+ * Heatmap3D.jsx — (경도 X, 위도 Y, 수심 Z) 3차원 막대 히트맵.
  *
- * 형식 채택: design/UI_REQUIREMENTS.md §3.10 (사용자 확정 2026-08-26).
- *   깊이별 평면 슬라이스(deck.gl GridLayer)를 대체한다 — 세 수심층을 한 화면에 쌓아 보여준다.
+ * 표현 형식 (사용자 확정 2026-08-28 — 산점에서 막대그래프로 교체):
+ *   · X/Y 축은 **실제 위도·경도** 를 격자로 나눈 것이다. 축 눈금에 좌표를 그대로 쓴다.
+ *   · 막대는 **각 수심 층 바닥에서 값 크기만큼** 위로 솟는다.
+ *     높이 스케일은 [0, 위험 임계값] 고정(EC 0~700 / TDS 0~350) — 배치마다 바뀌지 않는다.
+ *   · 색은 세 단계뿐이다: 정상(0~280 / 0~140) = 파랑 한 색, 주의 = #B26A00, 위험 = #C62828.
+ *     값의 크기는 막대 높이가 이미 선형으로 나타내므로 정상 대역을 그라데이션으로 나누지 않는다
+ *     (사용자 확정 2026-08-28).
+ *   · 막대를 클릭하면 그 측정 지점이 GPS 지도와 하이라이트 동기화된다.
  *
- * 값 표현 규칙 (CLAUDE.md 1절 — 임계값·컬러 도메인은 불변):
- *   · 정상 도메인 안 : 파랑 단일 순차 램프 + 사각형
- *   · 도메인 초과(주의) : #B26A00 다이아몬드 / 위험 임계 초과 : #C62828 다이아몬드
- *   · 마커 크기 = 값 비례(선형). 강조를 위한 확대·왜곡 금지.
- *   · fault 레코드는 집계에서 제외한다(6절). stale 구간은 애초에 레코드가 없다.
- *
- * 3초 배치로만 갱신한다(CLAUDE.md 3절). 회전은 로컬 상호작용이라 즉시 반영한다.
+ * 3초 배치로만 갱신한다(CLAUDE.md 3절). 회전·선택은 로컬 상호작용이라 즉시 반영한다.
+ * 이전 산점 구현은 커밋 0f5c738 에 남아 있다 (롤백 지점).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HEATMAP_3D, isAggregatable } from '../config.js';
-
-const GRID = 7;                    // 격자 7×7 (동서 × 남북)
-const DEPTHS = [0.5, 1.0, 1.5];
+import { HEATMAP_3D, layerLabel, layerName } from '../config.js';
+import { GRID, DEPTHS, cellCenter } from '../stations.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const shade = (hex, f) => {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * f);
+  const g = Math.round(((n >> 8) & 255) * f);
+  const b = Math.round((n & 255) * f);
+  return `rgb(${r},${g},${b})`;
+};
 
-/** 측정 레코드를 (i, j, depth) 격자 평균으로 접는다. */
-function buildCells(records, metric) {
-  const pts = records.filter((r) => isAggregatable(r, metric));
-  if (pts.length === 0) return [];
-
-  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
-  for (const r of pts) {
-    if (r.lat < minLat) minLat = r.lat;
-    if (r.lat > maxLat) maxLat = r.lat;
-    if (r.lon < minLon) minLon = r.lon;
-    if (r.lon > maxLon) maxLon = r.lon;
-  }
-  // 측점이 한 곳에 몰려 있으면 분모가 0이 된다 — 최소 폭을 준다.
-  const spanLat = Math.max(maxLat - minLat, 1e-7);
-  const spanLon = Math.max(maxLon - minLon, 1e-7);
-
-  const acc = new Map();
-  for (const r of pts) {
-    const i = clamp(Math.floor(((r.lon - minLon) / spanLon) * GRID), 0, GRID - 1);
-    const j = clamp(Math.floor(((r.lat - minLat) / spanLat) * GRID), 0, GRID - 1);
-    const key = `${i}|${j}|${r.depth}`;
-    const cur = acc.get(key);
-    if (cur) { cur.sum += r[metric]; cur.n += 1; }
-    else acc.set(key, { i, j, d: r.depth, sum: r[metric], n: 1 });
-  }
-  return [...acc.values()].map((c) => ({ i: c.i, j: c.j, d: c.d, v: c.sum / c.n, n: c.n }));
-}
-
-export default function Heatmap3D({ batchSeq, recordsRef, metric, depth }) {
-  const wrapRef = useRef(null);
+export default function Heatmap3D({ agg, metric, depth, selected, onSelect }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
+  const movedRef = useRef(false);
 
   const [view, setView] = useState({ az: -0.62, el: 0.52 });   // 방위각 / 고도각(라디안)
   const [size, setSize] = useState({ w: 760, h: 360 });
-  const [cells, setCells] = useState([]);
   const [tip, setTip] = useState(null);
 
+  // agg(측정 지점 집계)는 App 이 3초 배치마다 만들어 지도와 **같은 객체**를 넘겨준다.
+  // 두 패널이 같은 station id 를 봐야 클릭 하이라이트가 동기화된다 (stations.js).
   const cfg = HEATMAP_3D.metrics[metric];
 
-  // 3초 배치 갱신 — recordsRef 는 훅이 채워 둔 스냅샷이다.
-  useEffect(() => {
-    setCells(buildCells(recordsRef.current ?? [], metric));
-  }, [batchSeq, recordsRef, metric]);
-
-  // 크기 추적 (부모 ResizeObserver 와 별개로 자기 박스를 본다)
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return undefined;
@@ -80,6 +53,7 @@ export default function Heatmap3D({ batchSeq, recordsRef, metric, depth }) {
   // ── 회전 ──────────────────────────────────────────────────────────────
   const onPointerDown = useCallback((e) => {
     dragRef.current = { x: e.clientX, y: e.clientY, az: view.az, el: view.el };
+    movedRef.current = false;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     e.currentTarget.classList.add('drag');
   }, [view]);
@@ -87,6 +61,7 @@ export default function Heatmap3D({ batchSeq, recordsRef, metric, depth }) {
   const onPointerMove = useCallback((e) => {
     const d = dragRef.current;
     if (!d) return;
+    if (Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) > 3) movedRef.current = true;
     setView({
       az: d.az + (e.clientX - d.x) * 0.008,
       el: clamp(d.el + (e.clientY - d.y) * 0.005, 0.12, 1.35)
@@ -99,68 +74,105 @@ export default function Heatmap3D({ batchSeq, recordsRef, metric, depth }) {
   }, []);
 
   // ── 투영 ──────────────────────────────────────────────────────────────
-  const { box, project } = useMemo(() => {
+  const { project, barMax } = useMemo(() => {
     const { w: W, h: H } = size;
-    const w = Math.min((W - 90) / 2.8, H * 0.30);   // 좌측 수심 라벨 자리 확보
-    const h = Math.min(H * 0.42, 300);
-    const b = {
-      cx: W / 2 + 16,
-      w,
-      h,
-      cy: (H - (2 * w * Math.sin(view.el) + h)) / 2 + w * Math.sin(view.el)
-    };
+    // 축 눈금(위경도)이 양쪽에 붙으므로 좌우 여백을 뺀다.
+    const w = Math.min((W - 165) / 2.9, H * 0.30);
+    const h = Math.min(H * 0.40, 280);
+    const cx = W / 2 - 10;
+    const cy = (H - (2 * w * Math.sin(view.el) + h)) / 2 + w * Math.sin(view.el) + 12;
     const ca = Math.cos(view.az), sa = Math.sin(view.az);
-    const p = (x, y, z) => {
+    const p = (x, y, z, lift = 0) => {
       const rx = x * ca - y * sa, ry = x * sa + y * ca;
-      return [b.cx + rx * b.w, b.cy + ry * b.w * Math.sin(view.el) + z * b.h];
+      return [cx + rx * w, cy + ry * w * Math.sin(view.el) + z * h - lift];
     };
-    return { box: b, project: p };
+    // 층 간격의 88% 까지만 — 아래 층 막대가 위 층 평면을 뚫지 않게
+    return { project: p, barMax: (h / (DEPTHS.length - 1)) * 0.88 };
   }, [size, view]);
 
   const showAll = depth === 'all';
-  const shown = showAll ? cells : cells.filter((c) => Math.abs(c.d - Number(depth)) < 1e-6);
   const zOf = (d) => (d - DEPTHS[0]) / (DEPTHS[DEPTHS.length - 1] - DEPTHS[0]);
+  const cellHalf = 1 / GRID;      // 데이터 좌표(-1~1)에서 격자 반폭
 
-  // ── 마커 ──────────────────────────────────────────────────────────────
-  const marks = useMemo(() => {
-    const [lo, hi] = cfg.colorDomain;
-    return cells
-      .map((c) => {
-        const x = (c.i / (GRID - 1)) * 2 - 1;
-        const y = (c.j / (GRID - 1)) * 2 - 1;
-        const [px, py] = project(x, y, zOf(c.d));
-        const on = showAll || Math.abs(c.d - Number(depth)) < 1e-6;
-        // 크기 = 값 비례(선형). CLAUDE.md 1절: 값을 왜곡하는 확대 금지.
-        const tt = clamp((c.v - lo) / (hi - lo), 0, 1.4);
-        const size2 = 5 + tt * 9;
-        let color, diamond = false;
-        if (c.v > cfg.dangerMin) { color = cfg.dangerColor; diamond = true; }
-        else if (c.v > hi) { color = cfg.overColor; diamond = true; }
-        else {
-          const ramp = HEATMAP_3D.ramp;
-          const k = Math.round(((c.v - lo) / (hi - lo)) * (ramp.length - 1));
-          color = ramp[clamp(k, 0, ramp.length - 1)];
-        }
-        return { ...c, px, py, size: size2, color, diamond, on };
-      })
-      .sort((a, b) => a.py - b.py);   // 뒤 → 앞 순서로 그린다
+  // ── 막대 ──────────────────────────────────────────────────────────────
+  const bars = useMemo(() => {
+    const out = [];
+    for (const st of agg.list) {
+      const x = (st.i / (GRID - 1)) * 2 - 1;
+      const y = (st.j / (GRID - 1)) * 2 - 1;
+      for (const [dk, cell] of Object.entries(st.depths)) {
+        const d = Number(dk);
+        const z = zOf(d);
+        const on = showAll || Math.abs(d - Number(depth)) < 1e-6;
+        // 높이 = 값 비례(선형), 스케일 [0, 위험 임계값] 고정. 확대·왜곡 금지(CLAUDE.md 1절).
+        const hh = clamp(cell.v / cfg.dangerMin, 0, 1) * barMax;
+        let color;
+        if (cell.v > cfg.dangerMin) color = cfg.dangerColor;
+        else if (cell.v > cfg.normalMax) color = cfg.overColor;
+        else color = cfg.normalColor;
+        const s = cellHalf * 0.78;
+        const base = [[-s, -s], [s, -s], [s, s], [-s, s]]
+          .map(([dx, dy]) => project(x + dx, y + dy, z));
+        const top = [[-s, -s], [s, -s], [s, s], [-s, s]]
+          .map(([dx, dy]) => project(x + dx, y + dy, z, hh));
+        const c = project(x, y, z);
+        out.push({
+          id: st.id, st, d, v: cell.v, n: cell.n, samples: cell.samples, sd: cell.sd,
+          on, color, base, top, cx: c[0], cy: c[1], topY: c[1] - hh
+        });
+      }
+    }
+    // 뒤 → 앞 순서로 그린다 (밑면 중심의 화면 y 기준)
+    return out.sort((a, b) => a.cy - b.cy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, project, showAll, depth, cfg]);
+  }, [agg, project, showAll, depth, cfg, barMax]);
+
+  const empty = bars.filter((b) => b.on).length === 0;
+
+  const pickAt = useCallback((sx, sy) => {
+    // 앞에 그린 것부터 검사 — 막대 몸통(밑면 중심 ~ 꼭대기) 근처면 잡는다.
+    for (let n = bars.length - 1; n >= 0; n -= 1) {
+      const b = bars[n];
+      if (!b.on) continue;
+      if (Math.abs(b.cx - sx) < 12 && sy <= b.cy + 7 && sy >= b.topY - 9) return b;
+    }
+    return null;
+  }, [bars]);
 
   const onMove = useCallback((e) => {
     if (dragRef.current) { setTip(null); return; }
     const rect = svgRef.current.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-    const hit = [...marks].reverse()
-      .find((k) => k.on && Math.abs(k.px - sx) < 8 && Math.abs(k.py - sy) < 8);
-    setTip(hit ? { x: sx, y: sy, m: hit } : null);
-  }, [marks]);
+    const hit = pickAt(sx, sy);
+    setTip(hit ? { x: sx, y: sy, b: hit } : null);
+  }, [pickAt]);
 
-  const empty = shown.length === 0;
+  const onClick = useCallback((e) => {
+    if (movedRef.current) return;              // 회전 드래그였으면 선택하지 않는다
+    const rect = svgRef.current.getBoundingClientRect();
+    const hit = pickAt(e.clientX - rect.left, e.clientY - rect.top);
+    onSelect?.(hit ? (hit.id === selected ? null : hit.id) : null);
+  }, [pickAt, onSelect, selected]);
+
+  // ── 축 눈금 (실제 위경도) ─────────────────────────────────────────────
+  const axisTicks = useMemo(() => {
+    if (!agg.bounds) return { x: [], y: [] };
+    const idx = [0, Math.floor((GRID - 1) / 2), GRID - 1];
+    return {
+      x: idx.map((i) => ({
+        i, pos: (i / (GRID - 1)) * 2 - 1,
+        label: cellCenter(agg.bounds, i, 0).lon.toFixed(5)
+      })),
+      y: idx.map((j) => ({
+        j, pos: (j / (GRID - 1)) * 2 - 1,
+        label: cellCenter(agg.bounds, 0, j).lat.toFixed(5)
+      }))
+    };
+  }, [agg.bounds]);
 
   return (
     <>
-      <div className="heat-wrap" ref={wrapRef}>
+      <div className="heat-wrap">
         <svg
           ref={svgRef}
           className="heat3d"
@@ -170,28 +182,35 @@ export default function Heatmap3D({ batchSeq, recordsRef, metric, depth }) {
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onPointerLeave={(e) => { endDrag(e); setTip(null); }}
+          onClick={onClick}
         >
           {/* 수심 평면 3장 */}
           {DEPTHS.map((d) => {
             const z = zOf(d);
             const on = showAll || Math.abs(d - Number(depth)) < 1e-6;
-            const corner = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
+            const corner = [[-1.08, -1.08], [1.08, -1.08], [1.08, 1.08], [-1.08, 1.08]]
               .map(([x, y]) => project(x, y, z).join(',')).join(' ');
             const grid = [];
-            for (let s = 1; s < 4; s++) {
-              const u = -1 + s * 0.5;
-              const a1 = project(u, -1, z), a2 = project(u, 1, z);
-              const b1 = project(-1, u, z), b2 = project(1, u, z);
+            for (let s = 0; s <= GRID; s += 1) {
+              const u = -1.08 + (s / GRID) * 2.16;
+              const a1 = project(u, -1.08, z), a2 = project(u, 1.08, z);
+              const b1 = project(-1.08, u, z), b2 = project(1.08, u, z);
               grid.push(`M${a1} L${a2} M${b1} L${b2}`);
             }
-            const lp = project(-1.04, -1.04, z);
+            const lp = project(-1.14, -1.14, z);
             return (
               <g key={`plane-${d}`}>
                 <polygon points={corner} fill={on ? '#F4F7FA' : '#FAFAFA'}
-                  stroke="#E1E0D9" strokeWidth="1" opacity={on ? 0.9 : 0.5} />
-                <path d={grid.join(' ')} stroke="#E8E7E0" strokeWidth="0.8" fill="none" />
-                <text x={lp[0] - 6} y={lp[1] + 4} fontSize="11" fontWeight="700"
+                  stroke="#E1E0D9" strokeWidth="1" opacity={on ? 0.92 : 0.45} />
+                <path d={grid.join(' ')} stroke="#E8E7E0" strokeWidth="0.7" fill="none"
+                  opacity={on ? 1 : 0.5} />
+                <text x={lp[0] - 6} y={lp[1] + 4} fontSize="11.5" fontWeight="700"
                   fill={on ? '#12405F' : '#B9C3CA'} textAnchor="end"
+                  stroke="#FCFCFB" strokeWidth="3" paintOrder="stroke">
+                  {layerName(d)}
+                </text>
+                <text x={lp[0] - 6} y={lp[1] + 16} fontSize="9.5"
+                  fill={on ? '#5D7A8C' : '#C9D2D8'} textAnchor="end"
                   stroke="#FCFCFB" strokeWidth="3" paintOrder="stroke">
                   {d.toFixed(1)} m
                 </text>
@@ -200,58 +219,98 @@ export default function Heatmap3D({ batchSeq, recordsRef, metric, depth }) {
           })}
 
           {/* 수직 기둥 */}
-          {[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y], n) => {
+          {[[-1.08, -1.08], [1.08, -1.08], [1.08, 1.08], [-1.08, 1.08]].map(([x, y], n) => {
             const p1 = project(x, y, 0), p2 = project(x, y, 1);
             return <line key={`pillar-${n}`} x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]}
               stroke="#E1E0D9" strokeWidth="1" />;
           })}
 
-          {/* 셀 마커 */}
-          {marks.map((k, n) => (
-            <rect key={`m-${n}`} x={k.px - k.size / 2} y={k.py - k.size / 2}
-              width={k.size} height={k.size}
-              rx={k.diamond ? undefined : 1}
-              transform={k.diamond ? `rotate(45 ${k.px} ${k.py})` : undefined}
-              fill={k.color} opacity={k.on ? 0.92 : 0.16} />
-          ))}
-
-          {/* 축 라벨 */}
-          {(() => {
-            const xl = project(0, -1.5, 1), yl = project(1.5, 0, 1);
+          {/* 막대 — 옆면 4장 + 윗면 1장으로 입체를 만든다 */}
+          {bars.map((b, n) => {
+            const isSel = selected && b.id === selected;
+            const op = b.on ? (selected && !isSel ? 0.3 : 1) : 0.12;
             return (
-              <>
-                <text x={xl[0]} y={xl[1] + 14} fontSize="11" fill="#898781" textAnchor="middle"
-                  stroke="#FCFCFB" strokeWidth="3" paintOrder="stroke">동서 X</text>
-                <text x={yl[0]} y={yl[1] + 14} fontSize="11" fill="#898781" textAnchor="middle"
-                  stroke="#FCFCFB" strokeWidth="3" paintOrder="stroke">남북 Y</text>
-              </>
+              <g key={`bar-${n}`} opacity={op} style={{ cursor: 'pointer' }}>
+                {[0, 1, 2, 3].map((k) => {
+                  const k2 = (k + 1) % 4;
+                  const pts = [b.base[k], b.base[k2], b.top[k2], b.top[k]]
+                    .map((p) => p.join(',')).join(' ');
+                  return <polygon key={k} points={pts} fill={shade(b.color, k % 2 ? 0.72 : 0.87)} />;
+                })}
+                <polygon points={b.top.map((p) => p.join(',')).join(' ')}
+                  fill={b.color} stroke={isSel ? '#0F2B3D' : 'rgba(15,43,61,.18)'}
+                  strokeWidth={isSel ? 2 : 0.7} />
+                {isSel && (
+                  <polygon points={b.base.map((p) => p.join(',')).join(' ')}
+                    fill="none" stroke="#0F2B3D" strokeWidth="1.6" strokeDasharray="3 2" />
+                )}
+              </g>
             );
-          })()}
+          })}
+
+          {/* 축 눈금 — 실제 위경도. 격자와 맞아야 하므로 투영해서 찍는다. */}
+          {agg.bounds && (
+            <>
+              {axisTicks.x.map((t) => {
+                const p = project(t.pos, 1.22, 1);
+                return (
+                  <text key={`xt-${t.i}`} x={clamp(p[0], 34, size.w - 34)} y={p[1] + 4}
+                    fontSize="9.5" fill="#7E8C95" textAnchor="middle"
+                    stroke="#FCFCFB" strokeWidth="3" paintOrder="stroke">
+                    {t.label}
+                  </text>
+                );
+              })}
+              {axisTicks.y.map((t) => {
+                const p = project(1.22, t.pos, 1);
+                return (
+                  <text key={`yt-${t.j}`} x={Math.min(p[0], size.w - 62)} y={p[1] + 4}
+                    fontSize="9.5" fill="#7E8C95" textAnchor="start"
+                    stroke="#FCFCFB" strokeWidth="3" paintOrder="stroke">
+                    {t.label}
+                  </text>
+                );
+              })}
+            </>
+          )}
+
+          {/* 축 이름은 투영하지 않는다 — 회전해도 눈금과 겹치지 않게 화면 고정 */}
+          <text x="12" y={size.h - 10} fontSize="10.5" fontWeight="700" fill="#7E8C95">
+            X = 경도(동서) · Y = 위도(남북) · Z = 수심
+          </text>
         </svg>
 
         {empty && (
           <div className="heat-empty">
-            이 깊이에서 집계 가능한 레코드가 없습니다 — 측정 레코드는 HOLD 구간에서만 생성됩니다
+            이 깊이에서 집계 가능한 레코드가 없습니다 — 측정 레코드는 측정(HOLD) 구간에서만 생성됩니다
+          </div>
+        )}
+        {!empty && agg.bounds?.degenerate && (
+          <div className="heat-note">
+            측정 지점이 한 곳뿐입니다 — 배를 옮겨 여러 지점을 측정하면 격자가 채워집니다
           </div>
         )}
         {tip && (
           <div className="hm-tip" style={{ left: tip.x + 14, top: tip.y + 12 }}>
-            <b>{tip.m.v.toFixed(1)}</b> {cfg.unit} · 수심 {tip.m.d.toFixed(1)} m<br />
-            격자 ({tip.m.i + 1}, {tip.m.j + 1}) · 레코드 {tip.m.n}건 평균
+            <b>{tip.b.v.toFixed(1)}</b> {cfg.unit}
+            {tip.b.sd !== null && <> ± {tip.b.sd.toFixed(1)}</>} · {layerLabel(tip.b.d)}<br />
+            {tip.b.st.lat.toFixed(5)}, {tip.b.st.lon.toFixed(5)}<br />
+            {tip.b.n > 1 ? `레코드 ${tip.b.n}건 평균 · ` : ''}
+            30초 측정 표본 {tip.b.samples}개<br />
+            <span className="dim">클릭하면 지도에도 함께 표시됩니다</span>
           </div>
         )}
-        <span className="hm-hint">드래그로 회전</span>
+        <span className="hm-hint">드래그로 회전 · 막대 클릭으로 지점 선택</span>
       </div>
 
       <div className="legend">
-        <span className="sw num">{cfg.colorDomain[0]}</span>
-        <span className="ramp" />
-        <span className="sw num">{cfg.colorDomain[1]} {cfg.unit}</span>
-        <span className="sw"><b className="dia" style={{ background: cfg.overColor }} />
-          주의 {cfg.colorDomain[1]}~{cfg.dangerMin}</span>
-        <span className="sw"><b className="dia" style={{ background: cfg.dangerColor }} />
+        <span className="sw"><b style={{ background: cfg.normalColor }} />
+          정상 0~{cfg.normalMax} {cfg.unit}</span>
+        <span className="sw"><b style={{ background: cfg.overColor }} />
+          주의 {cfg.normalMax}~{cfg.dangerMin}</span>
+        <span className="sw"><b style={{ background: cfg.dangerColor }} />
           위험 &gt;{cfg.dangerMin}</span>
-        <span className="sw">마커 크기 = 값 비례(선형) · fault 집계 제외</span>
+        <span className="sw">막대 높이 = 값 비례(0~{cfg.dangerMin} {cfg.unit}) · fault 집계 제외</span>
       </div>
     </>
   );

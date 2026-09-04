@@ -7,7 +7,7 @@ import { useEffect, useRef } from 'react';
 import { createGaugePanel } from '../panels/gauges.js';
 import { HEATMAP_3D } from '../config.js';
 
-export default function GaugePanel({ fastSeq, liveTickRef, stale, metric, lastSeenText }) {
+export default function GaugePanel({ fastSeq, liveTickRef, stale, metric, lastSeenText, children }) {
   const containerRef = useRef(null);
   const panelRef = useRef(null);
 
@@ -29,15 +29,17 @@ export default function GaugePanel({ fastSeq, liveTickRef, stale, metric, lastSe
   }, [metric]);
 
   return (
-    <section className={`panel a-sensor${stale ? ' is-stale-panel' : ''}`}>
+    <section className="panel a-sensor">
       <h2 className="panel-title">
         센서 실측값 <span className="hint">1초 갱신</span>
       </h2>
       <div className="panel-body">
-        <div className="gauge-grid" ref={containerRef} />
-        <p className="metric-note">
+        <div className={`gauge-grid${stale ? ' is-stale-part' : ''}`} ref={containerRef} />
+        <p className={`metric-note${stale ? ' is-stale-part' : ''}`}>
           {lastSeenText} · 표시 항목({HEATMAP_3D.metrics[metric].label}) 강조 중
         </p>
+        {/* 게이지 아래 빈 자리에 조사 차수 관리를 넣는다 (사용자 요청 2026-08-29) */}
+        {children}
       </div>
     </section>
   );
