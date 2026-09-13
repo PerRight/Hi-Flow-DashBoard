@@ -98,11 +98,23 @@ class Engine:
         self.hold_samples = []        # 이번 층의 표본 버퍼 [{t, ec, tds, temp, lat, lon}]
         self.target_idx = 0           # 이번에 내려갈 목표 층 (DEPTH_LEVELS 인덱스)
 
-        # 보트 GPS (모의 — 실기에서는 GPS 모듈로 교체)
+        # 보트 GPS — 모의 좌표. 실측 GPS 가 한 번이라도 들어오면 아래 gps_* 가 정본이 되고
+        # 이 모의 보행은 영구히 멈춘다 (_move_boat 첫 줄).
         self._rnd = random.Random(20260805)
         self.lat = SITE_LAT - SITE_SPAN_LAT * 0.6
         self.lon = SITE_LON - SITE_SPAN_LON * 0.6
         self.heading = math.pi * 0.35
+
+        # 실측 GPS (raspi/feed.py → /ws/ingest, 사용자 확정 2026-09-13).
+        #   gps_source : GPS 를 보내는 수집기가 붙었는가 (원시 표본에 lat 키가 있는가)
+        #   gps_lat/lon: 마지막으로 잡힌 FIX — FIX 가 끊겨도 지우지 않고 유지한다
+        #   gps_fix    : 그 좌표가 지금 유효한가 (수집기가 판정해서 보낸 값)
+        #   gps_at     : 마지막으로 gps_fix=True 였던 시각 (monotonic) — 경고 문구의 초 계산
+        self.gps_source = False
+        self.gps_lat = None
+        self.gps_lon = None
+        self.gps_fix = False
+        self.gps_at = 0.0
 
         # 조사 차수 — **조작자가 "차수 시작"을 눌러야 생긴다** (사용자 확정 2026-08-29).
         # 전원만 켜져 있고 측정을 안 하면 차수도 레코드도 만들어지지 않는다.
@@ -234,7 +246,13 @@ class Engine:
 
     # ── 1초 진행 ─────────────────────────────────────────────────────────
     def _move_boat(self, dt):
-        """수면 대기 중일 때만 이동(프로브가 내려가 있으면 정지)."""
+        """모의 보트 이동 — 수면 대기 중일 때만(프로브가 내려가 있으면 정지).
+
+        실측 GPS 가 한 번이라도 들어왔으면 아무것도 하지 않는다. 모의 좌표와
+        실측 좌표가 섞이면 궤적이 순간이동한다.
+        """
+        if self.gps_source:
+            return
         if self.state != SURFACE:
             return
         rnd = self._rnd
@@ -296,7 +314,43 @@ class Engine:
         if sample is not None:
             self.last_raw = sample
             self.last_raw_at = time.monotonic()
+            self._take_gps(sample)
         return sample
+
+    def _take_gps(self, sample):
+        """원시 표본에 실린 GPS 를 흡수한다. 좌표는 만들지도 보정하지도 않는다.
+
+        lat 키가 아예 없으면 GPS 를 안 보내는 수집기(구버전 feed.py·목업)이므로
+        모의 좌표를 계속 쓴다. 키가 있으면 값이 null 이어도 **GPS 수집기가 붙은
+        것**이고, 그 뒤로는 모의 좌표를 쓰지 않는다 — FIX 를 못 잡았을 뿐인데
+        가짜 보트가 돌아다니면 안 된다 (CLAUDE.md 6절).
+        """
+        if "lat" not in sample and "gps_fix" not in sample:
+            return
+        self.gps_source = True
+        lat, lon = _clean(sample.get("lat")), _clean(sample.get("lon"))
+        self.gps_fix = bool(sample.get("gps_fix")) and lat is not None and lon is not None
+        if lat is not None and lon is not None:
+            # FIX 가 끊긴 동안에도 수집기는 마지막 좌표를 계속 보낸다 → 그대로 유지.
+            self.gps_lat, self.gps_lon = lat, lon
+        if self.gps_fix:
+            self.gps_at = time.monotonic()
+
+    def gps_state(self):
+        """GPS 표시 상태 — 대시보드 경고와 /health 가 같은 값을 본다.
+
+            none : GPS 수집기 없음 → 좌표는 모의값이다 (개발·목업 전용)
+            wait : GPS 는 붙었으나 아직 한 번도 FIX 없음 → 좌표 없음
+            hold : FIX 가 끊겨 **마지막 좌표를 유지 중** → 현재 위치가 아니다(경고)
+            ok   : 지금 잡힌 FIX
+        """
+        if not self.gps_source:
+            return "none"
+        if self.gps_lat is None:
+            return "wait"
+        age = time.monotonic() - self.last_raw_at
+        # 수집기 자체가 끊기면(표본 미수신) GPS 도 현재 값이 아니다.
+        return "ok" if (self.gps_fix and age <= STALE_SECONDS) else "hold"
 
     async def tick(self):
         dt = TICK_SECONDS * TIME_SCALE
@@ -320,7 +374,17 @@ class Engine:
             status = "ok"
 
         depth = round(self.depth, 3)
-        lat, lon = round(self.lat, 6), round(self.lon, 6)
+
+        # 좌표 정본 — 실측 GPS 가 붙었으면 그쪽만 쓴다(모의값과 섞지 않는다).
+        # FIX 를 못 잡았으면 lat/lon 은 null 이고, 그 구간의 측정 레코드는
+        # 좌표 없이 저장된다 → 히트맵에는 못 올라가지만 수질값은 남는다 (1·6절).
+        gps_state = self.gps_state()
+        if self.gps_source:
+            lat = None if self.gps_lat is None else round(self.gps_lat, 6)
+            lon = None if self.gps_lon is None else round(self.gps_lon, 6)
+        else:
+            lat, lon = round(self.lat, 6), round(self.lon, 6)
+        gps_age = None if self.gps_at == 0.0 else round(time.monotonic() - self.gps_at, 1)
 
         # ① live — 1 Hz 상시. 이동 중에도 나가며 저장하지 않는다.
         live = {
@@ -344,6 +408,11 @@ class Engine:
             "ec": ec, "tds": tds, "temp": temp,
             "lat": lat, "lon": lon,
             "status": status,
+            # GPS 표시 상태 (CLAUDE.md 1절 확장, 사용자 확정 2026-09-13).
+            # 구버전 대시보드는 이 키를 무시하고, 구버전 서버에 붙은 새 대시보드는
+            # 키가 없으면 경고를 띄우지 않는다(옛 동작 그대로 폴백).
+            "gps": gps_state,
+            "gps_age": gps_age,
         }
         await self._broadcast(live)
         self.live_sent += 1

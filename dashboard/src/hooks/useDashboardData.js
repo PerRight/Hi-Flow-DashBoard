@@ -44,6 +44,11 @@ export function useDashboardData() {
   const depthMsgRef = useRef(null);          // 수심 패널용 — live 수신 즉시 갱신(배치 없음)
   const latestLiveRef = useRef(null);        // 지도 현재 위치용 (stale 에도 마지막 위치 유지)
   const liveTrailRef = useRef([]);           // 보트 궤적 [[lon, lat], ...]
+  // 궤적 생명주기 (사용자 확정 2026-09-06):
+  //   지점 이동 중(측정 전)에만 궤적을 그린다.
+  //   측정 시작 → 그리기 중지 / 측정 완료 → 직전 구간(A→B) 궤적을 지우고
+  //   현재 위치에서 다음 구간(B→C)을 새로 그리기 시작한다.
+  const measuringRef = useRef(false);
   const batchDirtyRef = useRef(true);
   const faultCountRef = useRef(0);
 
@@ -64,6 +69,11 @@ export function useDashboardData() {
   });
   const [stale, setStale] = useState(false);
   const [linkUp, setLinkUp] = useState(false);
+  // GPS 표시 상태 (2026-09-13). 'ok' | 'hold' | 'wait' | 'none' | null(구버전 서버).
+  // 초 단위 나이는 1초마다 바뀌므로 ref 에 둔다 — 이것 때문에 앱 전체를 다시
+  // 그리지 않는다 (CLAUDE.md 3절). 상태 문자열이 바뀔 때만 리렌더한다.
+  const gpsRef = useRef({ state: null, age: null });
+  const [gpsState, setGpsState] = useState(null);
 
   useEffect(() => { selectedSurveyRef.current = selectedSurvey; }, [selectedSurvey]);
 
@@ -198,7 +208,6 @@ export function useDashboardData() {
     await new Promise((r) => setTimeout(r, 400));
     await refreshSurveys().catch(() => {});
   }, [refreshSurveys]);
-  const injectStale = useCallback((seconds = 4) => clientRef.current?.injectStale(seconds), []);
 
   useEffect(() => {
     const client = createWsClient();
@@ -211,13 +220,21 @@ export function useDashboardData() {
       depthMsgRef.current = msg;         // 수심 패널은 매 live 마다 즉시 반영
       setDepthSeq((s) => s + 1);
 
+      // GPS 표시 상태 — 키가 없는 구버전 서버에 붙으면 null 로 두어 경고를 띄우지 않는다.
+      const gs = typeof msg.gps === 'string' ? msg.gps : null;
+      gpsRef.current = { state: gs, age: Number.isFinite(msg.gps_age) ? msg.gps_age : null };
+      setGpsState((prev) => (prev === gs ? prev : gs));
+
       if (Number.isFinite(msg.lat) && Number.isFinite(msg.lon)) {
         latestLiveRef.current = msg;
-        const trail = liveTrailRef.current;
-        const prev = trail[trail.length - 1];
-        if (!prev || Math.abs(prev[0] - msg.lon) > 1e-7 || Math.abs(prev[1] - msg.lat) > 1e-7) {
-          trail.push([msg.lon, msg.lat]);
-          if (trail.length > MAX_TRAIL_POINTS) liveTrailRef.current = trail.slice(-MAX_TRAIL_POINTS);
+        // 측정 중(측정 시작~완료)에는 궤적을 늘리지 않는다 — 보트가 그 자리에 머무는 구간이다.
+        if (!measuringRef.current) {
+          const trail = liveTrailRef.current;
+          const prev = trail[trail.length - 1];
+          if (!prev || Math.abs(prev[0] - msg.lon) > 1e-7 || Math.abs(prev[1] - msg.lat) > 1e-7) {
+            trail.push([msg.lon, msg.lat]);
+            if (trail.length > MAX_TRAIL_POINTS) liveTrailRef.current = trail.slice(-MAX_TRAIL_POINTS);
+          }
         }
         if (selectedSurveyRef.current === activeSurveyRef.current) batchDirtyRef.current = true;
       }
@@ -234,7 +251,20 @@ export function useDashboardData() {
       if (selectedSurveyRef.current === rec.survey) batchDirtyRef.current = true;
     });
 
-    client.onWinchState((s) => setWinchMeta(s));
+    client.onWinchState((s) => {
+      const was = measuringRef.current;
+      measuringRef.current = !!s.measuring;
+      // 측정 완료 순간(측정 중 → 아님): 직전 구간 궤적을 버리고 현재 위치에서 다시 시작한다.
+      if (was && !measuringRef.current) {
+        const here = latestLiveRef.current;
+        liveTrailRef.current =
+          here && Number.isFinite(here.lat) && Number.isFinite(here.lon)
+            ? [[here.lon, here.lat]]
+            : [];
+        batchDirtyRef.current = true;
+      }
+      setWinchMeta(s);
+    });
     client.onLink((up) => {
       linkUpRef.current = up;
       setLinkUp(up);
@@ -287,10 +317,11 @@ export function useDashboardData() {
     storeRef,
     // 명령
     sendCommand,
-    injectStale,
     // 연결 상태
     stale,
     linkUp,
+    gpsState,
+    gpsRef,
     // 틱 신호 + 스냅샷 ref (패널이 직접 읽는다)
     fastSeq,
     depthSeq,

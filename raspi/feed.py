@@ -1,19 +1,29 @@
 """
-feed.py — EC/TDS 일체형 센서를 라즈베리파이에서 직접 읽어 서버 /ws/ingest 로 공급.
+feed.py — EC/TDS 일체형 센서 + 부표 GPS 를 라즈베리파이에서 읽어 서버 /ws/ingest 로 공급.
 
 CLAUDE.md 1절 원시 스키마만 보낸다. 키 추가 금지.
 
-    {"seq": 1024, "ec": 187.5, "tds": 93.0, "temp": 21.3}
+    {"seq": 1024, "ec": 187.5, "tds": 93.0, "temp": 21.3,
+     "lat": 36.575102, "lon": 127.221401, "gps_fix": true}
 
 pH 는 센서 구성에서 제외됐다(2026-08-10). `tds` 는 센서가 계산해 준 값을 그대로
 전달한다 — 재계산·재보정 금지 (CLAUDE.md 1·4절).
 읽기 실패한 틱은 아예 보내지 않는다 → 서버가 2초 후 status="stale" 로 표시(6절).
+
+GPS (2026-09-13 추가)
+    lat/lon/gps_fix 는 gps.py 가 별도 스레드로 읽어 둔 최신 FIX 다.
+    FIX 가 끊겨도 마지막 좌표를 유지하되 gps_fix=false 로 내려 "지금 값이 아님" 을
+    알린다 (사용자 확정 2026-09-13, 근거는 gps.py 독스트링).
+    GPS 가 한 번도 안 잡혔으면 lat/lon 은 null 이다 — JSON 에 NaN 은 싣지 않는다(1절).
+    **센서 틱과 GPS 는 서로를 막지 않는다** — GPS 가 없어도 수질값 송신은 계속된다.
 
 사용법
     python3 feed.py --port /dev/ttyUSB0 --server ws://localhost:8000/ws/ingest
     python3 feed.py --probe        # 서버 없이 센서만: reg0~9 덤프 + 스케일 해석표
     python3 feed.py --once         # 서버 없이 1회 읽어 사람이 보기 좋게 출력
     python3 feed.py --fake         # 센서 없이 가짜 값 송신 (시험 전용)
+    python3 feed.py --no-gps       # GPS 미장착/점검 중 — 좌표 없이 송신
+    python3 gps.py  --port /dev/ttyAMA0     # GPS 만 따로 점검
 
 레거시: 구형 DEC890 을 붙일 때만 --driver dec890 (참고용으로 남겨 둔 경로).
 """
@@ -26,6 +36,7 @@ import sys
 import time
 
 import ects
+import gps as gps_mod
 from ects import EcTds, REG_DUMP_COUNT, REG_EC, REG_TDS, REG_TEMP
 
 DEFAULT_SERVER = "ws://localhost:8000/ws/ingest"
@@ -167,7 +178,13 @@ def _r2(v):
     return None if v is None else round(v, 2)
 
 
-async def feed(sensor, url, interval, verbose=True):
+def _r7(v):
+    """좌표는 소수 7자리(≈11 mm)까지. GPS 원값을 자르지 않는다."""
+    v = ects.finite(v)
+    return None if v is None else round(v, 7)
+
+
+async def feed(sensor, url, interval, verbose=True, gps=None):
     import websockets
 
     seq = 0
@@ -195,12 +212,18 @@ async def feed(sensor, url, interval, verbose=True):
                             f"{sensor.last_error}")
                         continue
 
+                    # GPS 는 자기 스레드가 계속 돌고 있다 — 여기서는 최신 상태만
+                    # 집어 간다(블로킹 없음). 미장착(--no-gps)이면 좌표는 null 이다.
+                    g = gps.snapshot() if gps is not None else None
                     seq += 1
-                    # CLAUDE.md 1절 원시 스키마 4키. 추가·개명 금지.
+                    # CLAUDE.md 1절 원시 스키마 7키. 추가·개명 금지.
                     msg = {"seq": seq,
                            "ec": _r2(r.get("ec")),
                            "tds": _r2(r.get("tds")),
-                           "temp": _r2(r.get("temp"))}
+                           "temp": _r2(r.get("temp")),
+                           "lat": _r7(g["lat"]) if g else None,
+                           "lon": _r7(g["lon"]) if g else None,
+                           "gps_fix": bool(g["fix"]) if g else False}
                     await ws.send(json.dumps(msg, allow_nan=False))
 
                     if verbose:
@@ -211,9 +234,12 @@ async def feed(sensor, url, interval, verbose=True):
                             flags.append("TDS이상")
                         if not ects.plausible_temp(r.get("temp")):
                             flags.append("수온이상")
+                        if g is not None and not g["fix"]:
+                            flags.append("GPS끊김" if g["lat"] is not None else "GPS미확보")
                         log(f"seq={seq:<6d} ec={_num(r.get('ec')):>8} µS/cm  "
                             f"tds={_num(r.get('tds')):>8} ppm  "
-                            f"temp={_num(r.get('temp')):>6} ℃"
+                            f"temp={_num(r.get('temp')):>6} ℃  "
+                            f"gps={gps_mod.describe(g) if g else '미사용'}"
                             + ("  [" + ",".join(flags) + "]" if flags else ""))
 
         except asyncio.CancelledError:
@@ -293,6 +319,15 @@ def main(argv=None):
                    help="Modbus 슬레이브 주소 (기본: ects=5, dec890=17)")
     p.add_argument("--baud", type=int, default=ects.DEFAULT_BAUD, help="보레이트")
     p.add_argument("--interval", type=float, default=1.0, help="폴링 주기(초)")
+    p.add_argument("--gps-port", default=gps_mod.DEFAULT_PORT,
+                   help="부표 GPS 시리얼 포트 (GPIO UART: /dev/ttyAMA0 또는 /dev/serial0)")
+    p.add_argument("--gps-baud", type=int, default=gps_mod.DEFAULT_BAUD,
+                   help="GPS 보레이트")
+    p.add_argument("--gps-fix-timeout", type=float, default=gps_mod.DEFAULT_FIX_TIMEOUT,
+                   help="이 시간 넘게 새 FIX 가 없으면 gps_fix=false "
+                        "(좌표는 마지막 값을 유지한다)")
+    p.add_argument("--no-gps", action="store_true",
+                   help="GPS 미장착·점검 중 — 좌표 없이 송신(서버가 모의 좌표로 폴백)")
     p.add_argument("--timeout", type=float, default=None,
                    help="Modbus 응답 대기(초, 기본: ects=1.0, dec890=0.4)")
     p.add_argument("--order", default=None,
@@ -358,17 +393,30 @@ def main(argv=None):
         log(f"포트 {args.port} @ {args.baud}-8N1 주소 {addr} timeout {timeout}s "
             f"(FC03 reg0=수온·reg1=EC·reg4=TDS)")
 
+    # GPS 는 송신 루프에서만 의미가 있다 (--probe/--once 는 센서 점검용 화면이다).
+    gps_reader = None
+    if streaming:
+        if args.no_gps:
+            log("GPS 미사용(--no-gps) — 좌표는 null 로 송신한다.")
+        else:
+            gps_reader = gps_mod.GpsReader(
+                args.gps_port, args.gps_baud, args.gps_fix_timeout).start()
+            log(f"GPS {args.gps_port} @ {args.gps_baud} "
+                f"(FIX 유지 한계 {args.gps_fix_timeout:.0f}초) — 첫 FIX 까지 수십 초 걸릴 수 있습니다")
+
     try:
         if args.probe:
             return _legacy_probe(sensor) if (legacy and not args.fake) else probe(sensor)
         if args.once:
             return _legacy_once(sensor, order) if (legacy and not args.fake) else once(sensor)
         return asyncio.run(feed(sensor, args.server, args.interval,
-                                verbose=not args.quiet))
+                                verbose=not args.quiet, gps=gps_reader))
     except KeyboardInterrupt:
         log("중단됨")
         return 0
     finally:
+        if gps_reader is not None:
+            gps_reader.stop()
         sensor.close()
 
 

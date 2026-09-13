@@ -82,8 +82,26 @@ export default function App() {
     ? (d.linkUp ? '센서 미수신 — 표시값은 마지막 수신값' : '서버 연결 끊김 — 재접속 시도 중')
     : '연결됨';
 
+  // ── GPS 표시 (2026-09-13) ────────────────────────────────────────────────
+  // 서버가 판정한 상태를 그대로 쓴다 — 대시보드가 좌표 나이를 다시 추정하지 않는다.
+  // gpsState === null 이면 구버전 서버라 GPS 정보가 없다 → 아무것도 표시하지 않는다.
+  const gpsAge = d.gpsRef.current.age;
+  const gpsAgeText = Number.isFinite(gpsAge) ? `${Math.round(gpsAge)}초` : '';
+  const GPS_VIEW = {
+    ok:   { chip: '실측 GPS', warn: null, cls: 'gps-chip ok' },
+    hold: { chip: `⚠ FIX 끊김 ${gpsAgeText}`, cls: 'gps-chip warn',
+            warn: `GPS 신호가 ${gpsAgeText}간 끊겼습니다 — 지도의 보트 위치는 마지막으로 잡힌 좌표이며 현재 위치가 아닙니다.` },
+    wait: { chip: '⚠ FIX 대기 중', cls: 'gps-chip warn',
+            warn: 'GPS FIX 를 아직 못 잡았습니다 — 측정 레코드가 좌표 없이 저장되어 3D 맵핑에 올라가지 않습니다.' },
+    none: { chip: '모의 좌표', cls: 'gps-chip warn',
+            warn: 'GPS 가 연결되지 않았습니다 — 지도의 보트 위치는 시뮬레이션 값입니다.' }
+  };
+  const gpsView = d.gpsState ? GPS_VIEW[d.gpsState] ?? null : null;
+
   // 과거 차수를 보는 중이면 지도는 기록된 궤적이므로 회색 처리 대상이 아니다.
-  const mapStale = d.stale && d.selectedSurvey === d.activeSurveyRef.current;
+  // GPS 가 hold/wait 여도 보트 마커는 회색이어야 한다 — 위치 자체가 현재 값이 아니다.
+  const posStale = d.stale || d.gpsState === 'hold' || d.gpsState === 'wait';
+  const mapStale = posStale && d.selectedSurvey === d.activeSurveyRef.current;
 
   // 날짜까지 보여 준다 (사용자 확정 2026-09-02) — 조사 기록과 대조할 때 필요하다.
   const now = new Date();
@@ -149,6 +167,12 @@ export default function App() {
         </div>
       )}
 
+      {/* GPS 경고 — 수질값은 정상인데 위치만 못 믿는 상황이라 주의색(노랑)이다.
+          센서 자체가 끊긴 stale 이면 위 배너가 이미 전부를 덮으므로 띄우지 않는다. */}
+      {!d.stale && gpsView?.warn && (
+        <div className="banner caution">⚠ {gpsView.warn}</div>
+      )}
+
       <main className="layout" ref={layoutRef}>
         <Rail
           metric={metric}
@@ -161,7 +185,7 @@ export default function App() {
 
         <section className="panel a-heat">
           <h2 className="panel-title">
-            <span>3D 히트맵 · {HEATMAP_3D.metrics[metric].label}</span>
+            <span>3D 맵핑 · {HEATMAP_3D.metrics[metric].label}</span>
             <span className="hint">
               {depth === 'all' ? '3층 전체' : layerLabel(depth)} · {comma(shownCount)}건
               {selectedStation
@@ -208,7 +232,10 @@ export default function App() {
         </GaugePanel>
 
         <section className="panel a-gps">
-          <h2 className="panel-title">GPS · 이동 궤적</h2>
+          <h2 className="panel-title">
+            <span>GPS · 이동 궤적</span>
+            {gpsView && <span className={gpsView.cls}>{gpsView.chip}</span>}
+          </h2>
           <div className="panel-body no-pad">
             <MapPanel
               ref={mapRef}
@@ -227,13 +254,6 @@ export default function App() {
       <footer className="statusbar">
         <span>{footerText}</span>
         <span className="spacer" />
-        <button
-          className="mini-btn"
-          title="Wi-Fi 끊김 상황을 강제로 재현합니다"
-          onClick={() => d.injectStale(4)}
-        >
-          끊김 상황 주입(4초)
-        </button>
       </footer>
     </>
   );

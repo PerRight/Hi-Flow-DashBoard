@@ -78,6 +78,18 @@ select{
   background:var(--danger-bg); color:var(--danger); font-weight:700; font-size:13px;
   border-bottom:1px solid #F1BEBE;
 }
+/* GPS 경고 (2026-09-13) — 수질값은 정상이고 위치만 못 믿는 상황이라 주의색을 쓴다.
+   위험(빨강)과 같은 색이면 조작자가 센서 이상과 구분하지 못한다. */
+.banner.caution{
+  background:var(--caution-bg); color:var(--caution); border-bottom-color:#EBD3A8;
+}
+/* GPS 패널 제목의 상태 칩 — 배너를 닫아도 현재 GPS 상태는 항상 보여야 한다. */
+.gps-chip{
+  font-size:11px; font-weight:700; border-radius:999px; padding:2px 9px;
+  white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+.gps-chip.ok{color:var(--ok); background:var(--ok-bg); border:1px solid #BFE6D5}
+.gps-chip.warn{color:var(--caution); background:var(--caution-bg); border:1px solid #EBD3A8}
 
 /* ── 그리드 ───────────────────────────────────────────────────────────── */
 main.layout{
@@ -160,6 +172,8 @@ main.layout{
 .measure-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .measure-count{font-size:12px;font-weight:700;color:var(--t-strong);margin-left:auto}
 .measure-sub{font-size:11px;color:var(--t-dim);line-height:1.5}
+/* 조작자가 지금 해야 할 일 — 빨간 글씨로 눈에 띄게 (2026-09-06) */
+.measure-sub.warn{color:var(--danger);font-weight:700}
 .progress{height:6px;border-radius:3px;background:#E9EDF0;border:1px solid var(--border);
   overflow:hidden}
 .progress > i{display:block;height:100%;background:var(--brand-400);transition:width .4s linear}
@@ -214,21 +228,25 @@ main.layout{
 .is-stale-part{opacity:.42;filter:grayscale(1)}
 
 /* ── 조사 차수 (센서 카드 아래, 2026-08-29) ───────────────────────────── */
+/* 카드 전체가 아이덴티티 하늘색이다 (사용자 확정 2026-09-06) —
+   센서 게이지(흰/회색)와 확실히 구분돼야 조작 영역인 것이 보인다. */
 .survey-box{
-  margin-top:auto;background:var(--sunken);border:1px solid var(--border);border-radius:8px;
+  margin-top:auto;background:var(--brand-100);border:1px solid var(--brand-300);border-radius:8px;
   padding:8px 10px;display:flex;flex-direction:column;gap:6px;
 }
-.survey-box .note{font-size:11px;line-height:1.45}
+.survey-box .note{font-size:11px;line-height:1.45;color:#3A5B70}
+/* 두 줄 안내문 — 한 덩어리로 흐르지 않게 줄마다 끊는다 */
+.note-lines{display:flex;flex-direction:column;gap:3px}
 .survey-head{display:flex;align-items:center;gap:10px}
-.survey-title{font-size:12px;font-weight:700;color:var(--t-strong)}
-.survey-head .state-badge{margin-left:auto;align-self:auto}
+.survey-title{font-size:12px;font-weight:700;color:var(--brand-700)}
+.survey-head .state-badge{margin-left:auto;align-self:auto;background:#fff}
 .site-input{
   font:inherit;font-size:13px;color:var(--t-strong);background:#fff;
   border:1px solid var(--border);border-radius:6px;padding:7px 10px;width:100%;
 }
 .site-input:focus{outline:2px solid var(--brand-300);outline-offset:0;border-color:var(--brand-500)}
-.site-input:read-only{background:var(--sunken);border-style:dashed;cursor:default}
-.survey-info{font-size:11px;color:var(--t-dim);line-height:1.5}
+.site-input:read-only{background:#EFF6FD;border-style:dashed;cursor:default}
+.survey-info{font-size:11px;color:#3A5B70;line-height:1.5}
 .survey-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .survey-btns .btn{min-height:34px;font-size:13px}
 .survey-btns .btn:disabled{opacity:.38;cursor:not-allowed}
@@ -257,6 +275,7 @@ main.layout{
   position:absolute;left:50%;bottom:10px;transform:translateX(-50%);
   background:#FAC9CF;border:1.5px solid #454545;color:#2E2E2E;
   border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;pointer-events:none;
+  text-align:center;line-height:1.55;
 }
 .legend{flex:0 0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .sw{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t-dim);
@@ -293,6 +312,20 @@ footer.statusbar .spacer{flex:1 1 auto}
     grid-template-areas:"rail" "heat" "depth" "sensor" "gps"}
   .a-rail{flex-direction:row}.a-rail .panel{flex:1 1 0}
   .a-heat,.a-gps{min-height:420px}
+}
+
+
+/* ── 지도 컨트롤 (사용자 확정 2026-09-06) ──────────────────────────────
+   우측 하단 출처(ⓘ) 표기는 숨기고, 그 자리에 축척 막대를 내린다.
+   축척은 흰 배경 · 검은 선을 유지하되 MapLibre 기본값이 비워 두는
+   윗변까지 검은 선을 넣어 사각형이 닫히게 한다. */
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib-button{display:none !important}
+.maplibregl-ctrl-bottom-right{z-index:2}
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-scale{
+  background:#fff;color:#111;font:inherit;font-size:10px;font-weight:700;
+  border:2px solid #111;border-top:2px solid #111;border-radius:2px;
+  padding:1px 5px;margin:0 10px 10px 0;box-shadow:0 1px 3px rgba(15,43,61,.18);
 }
 
 /* ── 기본 배율 ─────────────────────────────────────────────────────────
