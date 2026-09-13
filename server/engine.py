@@ -128,6 +128,25 @@ class Engine:
         self.live_sent = 0
         self.records_made = 0
 
+        # 미러 모드에서 마지막으로 중계한 live — /health 가 이걸 보고 보고한다.
+        # (미러는 자기 상태기계를 안 돌리므로 self.state/depth 는 의미가 없다.)
+        self.mirror_live = None
+        self.mirror_clients = 0          # 붙어 있는 forwarder 수
+        self.backfilled = 0              # 백필로 받아 저장한 레코드 수
+
+    # ── 미러 중계 (클라우드 전용) ─────────────────────────────────────────
+    async def relay(self, msg):
+        """forwarder 가 보낸 메시지를 **그대로** 대시보드에 중계한다.
+
+        미러는 수심 추정도 status 판정도 하지 않는다 (CLAUDE.md 0절) —
+        라즈베리파이가 판정한 값이 정본이고, 여기서 다시 계산하면 두 화면이
+        서로 다른 값을 보여 주게 된다.
+        """
+        if msg.get("type") == "live":
+            self.mirror_live = msg
+            self.live_sent += 1
+        await self._broadcast(msg)
+
     # ── ESP32 입력 ────────────────────────────────────────────────────────
     def push_raw(self, sample):
         """원시 표본 1건 투입. 큐가 넘치면 가장 오래된 것을 버린다(최신값 우선)."""

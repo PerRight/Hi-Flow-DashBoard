@@ -69,6 +69,22 @@ if not SENSORS:
     print("[config] UWD_SENSORS 가 비어 기본값(ec,tds,temp)을 사용한다.", flush=True)
     SENSORS = ALL_SENSORS
 
+# ── 미러 모드 (클라우드 전용, 사용자 확정 2026-09-13) ──────────────────────
+# UWD_MIRROR=1 이면 이 서버는 **미러**다: 자기 윈치 상태기계를 돌리지 않고,
+# 라즈베리파이 forwarder 가 /ws/mirror 로 보낸 값을 그대로 저장·중계만 한다
+# (CLAUDE.md 0절 — 클라우드는 수심 추정·status 판정을 재계산하지 않는다).
+# 미러는 윈치 명령을 일절 받지 않는다 — 원격에서 상태기계를 건드리면 실제 윈치와 어긋난다.
+MIRROR = os.environ.get("UWD_MIRROR", "0") == "1"
+
+# /ws/mirror 접속 토큰. 비어 있으면 미러가 **기동을 거부한다** — 인증 없는 수신구를
+# 열어 두면 주소를 아는 누구나 가짜 측정값을 밀어 넣을 수 있다 (6절).
+MIRROR_TOKEN = os.environ.get("UWD_MIRROR_TOKEN", "")
+if MIRROR and not MIRROR_TOKEN:
+    raise SystemExit(
+        "[config] UWD_MIRROR=1 인데 UWD_MIRROR_TOKEN 이 비어 있습니다.\n"
+        "         인증 없는 /ws/mirror 는 열지 않습니다 — 토큰을 설정하세요."
+    )
+
 # 시험 전용 시간 배속. 1 틱(1초)마다 상태기계를 이 배수만큼 진행시킨다.
 # 물리 상수(DESCENT_RATE 등)는 건드리지 않으며, 브로드캐스트는 언제나 1 Hz 다.
 # 현장/운영에서는 반드시 1.0 (기본값).

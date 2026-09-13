@@ -268,6 +268,51 @@ class Store:
             args.append(int(limit))
         return [dict(r) for r in self._q(sql, tuple(args))]
 
+    # ── 미러 (클라우드 전용) ─────────────────────────────────────────────
+    # 아래 세 메서드는 **이미 라즈베리파이가 판정을 끝낸 값**을 그대로 넣는다.
+    # 재계산·재판정 금지 (CLAUDE.md 0절).
+
+    def max_ts(self):
+        """저장된 측정 레코드의 최신 ts. 없으면 0 — forwarder 백필 기준점이다."""
+        return int(self._q("SELECT MAX(ts) AS m FROM records")[0]["m"] or 0)
+
+    def mirror_survey(self, row):
+        """Pi 의 차수 행을 **id 까지 그대로** 복제한다.
+
+        id 를 새로 매기면 레코드의 survey 참조가 어긋난다. 미러는 사본이지
+        독립된 저장소가 아니다.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO surveys "
+                "(id,site,survey_date,round,memo,started_at,ended_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                tuple(row.get(c) for c in SURVEY_COLUMNS),
+            )
+            self._conn.commit()
+
+    def mirror_record(self, rec):
+        """측정 레코드 1건을 즉시 넣는다. 이미 있으면 조용히 무시(백필 재전송 대비).
+
+        같은 (survey, ts, depth) 는 같은 측정이다 — 한 층의 30초 측정이 끝날 때
+        1건만 나오므로 이 셋이 겹치면 중복 전송이다. 배치 버퍼를 거치지 않는 이유는
+        백필이 끝난 시점을 forwarder 에게 정확히 알려 줘야 하기 때문이다.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO records "
+                "(ts,survey,ec,tds,temp,depth,lat,lon,status,samples,ec_sd,tds_sd,temp_sd) "
+                "SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? "
+                "WHERE NOT EXISTS ("
+                "  SELECT 1 FROM records WHERE survey=? AND ts=? AND depth=?)",
+                tuple(rec.get(c) for c in COLUMNS)
+                + (rec.get("survey"), rec.get("ts"), rec.get("depth")),
+            )
+            self._conn.commit()
+            n = cur.rowcount or 0
+            self.written += n
+            return n
+
     def count(self, survey=None):
         if survey is None:
             return self._q("SELECT COUNT(*) AS c FROM records")[0]["c"]

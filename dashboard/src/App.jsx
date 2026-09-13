@@ -133,7 +133,7 @@ export default function App() {
             list="site-options"
             value={siteDraft}
             onChange={(e) => setSiteDraft(e.target.value)}
-            readOnly={d.winchMeta.surveyOpen}
+            readOnly={d.winchMeta.surveyOpen || !!d.winchMeta.mirror}
             placeholder="조사 지점 메모"
             aria-label="조사 지점"
             title={d.winchMeta.surveyOpen
@@ -142,6 +142,11 @@ export default function App() {
           />
           {d.winchMeta.surveyOpen && (
             <span className="round-chip">{d.winchMeta.round}차 측정 중</span>
+          )}
+          {/* 원격(클라우드 미러) 화면임을 항상 보이게 — 보트 위 화면과 헷갈리면
+              조작자가 왜 버튼이 없는지 알 수 없다 (사용자 확정 2026-09-13). */}
+          {d.winchMeta.mirror && (
+            <span className="remote-chip">원격 · 읽기 전용</span>
           )}
         </div>
 
@@ -210,6 +215,7 @@ export default function App() {
           winchMeta={d.winchMeta}
           stale={d.stale}
           onCommand={d.sendCommand}
+          readOnly={!!d.winchMeta.mirror}
         />
 
         <GaugePanel

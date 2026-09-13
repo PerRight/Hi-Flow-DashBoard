@@ -109,8 +109,8 @@ export const HEATMAP_3D = {
       normalMax: 280,            // CLAUDE.md 1절: EC 정상 상한 (0~280 전부 정상 = 파랑 한 색)
       dangerMin: 700,            // CLAUDE.md 1절: EC 위험 임계값
       normalColor: NORMAL_BLUE,
-      overColor: '#B26A00',      // 주의(정상 상한 초과)
-      dangerColor: '#C62828'     // 위험
+      overColor: '#F0A10D',      // 주의(정상 상한 초과) — 사용자 지정 2026-09-06
+      dangerColor: '#D00000'     // 위험 — 사용자 지정 2026-09-06
     },
     tds: {
       label: 'TDS',
@@ -118,8 +118,8 @@ export const HEATMAP_3D = {
       normalMax: 140,            // CLAUDE.md 1절: TDS 정상 상한 (0~140 전부 정상)
       dangerMin: 350,            // CLAUDE.md 1절: TDS 위험 임계값
       normalColor: NORMAL_BLUE,
-      overColor: '#B26A00',
-      dangerColor: '#C62828'
+      overColor: '#F0A10D',
+      dangerColor: '#D00000'
     }
   }
 };

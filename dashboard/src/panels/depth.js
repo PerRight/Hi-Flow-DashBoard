@@ -81,16 +81,17 @@ export function createDepthPanel(root, onCommand) {
           <div class="measure-sub" id="measure-sub">측정 시작을 누르면 0.5 m 로 내려갑니다.</div>
         </div>
 
-        <div class="winch-btns">
+        <div class="winch-btns" id="winch-btns">
           <button data-cmd="down">▼ 내림</button>
           <button data-cmd="stop">■ 정지</button>
           <button data-cmd="up">▲ 올림</button>
         </div>
-        <div class="measure-btns">
+        <div class="measure-btns" id="measure-btns">
           <button class="btn" data-cmd="measure_start" id="btn-start">측정 시작</button>
           <button class="btn sec" data-cmd="measure_end" id="btn-end">측정 완료</button>
         </div>
-        <p class="hint sync-note" title="대시보드 버튼은 실제 윈치 조작과 동시에 눌러야 수심 추정이 맞습니다">내림·정지·올림은 실제 조작과 동시에</p>
+        <p class="hint sync-note" id="sync-note" title="내림·정지·올림·측정 시작·측정 완료 — 대시보드 버튼은 실제 윈치 조작과 동시에 눌러야 수심 추정이 맞습니다">버튼을 동시에 눌러주세요.</p>
+        <p class="note remote-note" id="remote-note" hidden>원격 화면입니다 — 윈치 조작은 보트 위 대시보드에서만 할 수 있습니다.</p>
       </div>
     </div>`;
 
@@ -115,13 +116,27 @@ export function createDepthPanel(root, onCommand) {
     line: root.querySelector('#probe-line'),
     btnStart: root.querySelector('#btn-start'),
     btnEnd: root.querySelector('#btn-end'),
-    buttons: [...root.querySelectorAll('[data-cmd]')]
+    buttons: [...root.querySelectorAll('[data-cmd]')],
+    winchBtns: root.querySelector('#winch-btns'),
+    measureBtns: root.querySelector('#measure-btns'),
+    syncNote: root.querySelector('#sync-note'),
+    remoteNote: root.querySelector('#remote-note')
   };
   const btnDown = el.buttons.find((b) => b.dataset.cmd === 'down');
 
+  // 원격(클라우드 미러) 화면에서는 조작을 아예 감춘다 (CLAUDE.md 0절).
+  let readOnly = false;
+  function setReadOnly(on) {
+    readOnly = !!on;
+    el.winchBtns.hidden = readOnly;
+    el.measureBtns.hidden = readOnly;
+    el.syncNote.hidden = readOnly;
+    el.remoteNote.hidden = !readOnly;
+  }
+
   el.buttons.forEach((b) => {
     b.addEventListener('click', () => {
-      if (b.disabled) return;
+      if (readOnly || b.disabled) return;
       onCommand(b.dataset.cmd);
     });
   });
@@ -148,7 +163,8 @@ export function createDepthPanel(root, onCommand) {
     el.value.textContent = depth.toFixed(2);
 
     // ── 통합 상태 표시: 배지 + n/30초 + 진행 바 ─────────────────────────
-    let badge, badgeCls = state, count, pct = 0, sub;
+    // subWarn: 조작자가 지금 뭔가 해야 한다는 뜻 — 빨간 글씨로 눈에 띄게 한다.
+    let badge, badgeCls = state, count, pct = 0, sub, subWarn = false;
 
     if (state === 'HOLD') {
       badge = done ? '측정 완료' : '측정 중';
@@ -158,9 +174,10 @@ export function createDepthPanel(root, onCommand) {
       if (lv === null) {
         sub = '측정 수심(0.5 / 1.0 / 1.5 m)이 아니어서 기록되지 않습니다.';
       } else if (done) {
+        // 다음 동작 안내는 줄을 바꿔서 눈에 띄게 한다 (사용자 확정 2026-09-06)
         sub = nextLv !== null
-          ? `${lv.toFixed(1)} m 측정 완료 — ▼ 내림을 눌러 ${nextLv.toFixed(1)} m 로 진행하세요.`
-          : `${lv.toFixed(1)} m 측정 완료 — 측정 완료를 눌러 수면으로 올리세요.`;
+          ? `${lv.toFixed(1)} m 측정 완료<br>▼ 내림을 눌러 ${nextLv.toFixed(1)} m 로 진행하세요.`
+          : `${lv.toFixed(1)} m 측정 완료<br>측정 완료를 눌러 수면으로 올리세요.`;
       } else {
         sub = `${lv.toFixed(1)} m 에서 측정 중입니다.`;
       }
@@ -184,9 +201,12 @@ export function createDepthPanel(root, onCommand) {
       badge = '수면 대기';
       count = '—';
       // 차수가 열려 있지 않으면 측정해도 기록될 곳이 없다 (사용자 확정 2026-08-29).
-      sub = meta.surveyOpen
-        ? '측정 시작을 누르면 0.5 m 로 내려갑니다.'
-        : '차수를 먼저 시작하세요 — 센서 실측값 카드 아래 "조사 차수"에서 시작합니다.';
+      if (meta.surveyOpen) {
+        sub = '측정 시작을 누르면 0.5 m 로 내려갑니다.';
+      } else {
+        sub = '우측의 수질 측정 시작란에 지역을 입력해주세요.';
+        subWarn = true;
+      }
       el.target.textContent = '목표 수심 —';
     }
 
@@ -195,7 +215,8 @@ export function createDepthPanel(root, onCommand) {
     el.count.textContent = count;
     el.progFill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
     el.progFill.classList.toggle('done', done);
-    el.sub.textContent = sub;
+    el.sub.innerHTML = sub;
+    el.sub.classList.toggle('warn', subWarn);
 
     // ── 버튼 가능 여부 ────────────────────────────────────────────────
     const measuring = meta.measuring || state !== 'SURFACE';
@@ -238,5 +259,5 @@ export function createDepthPanel(root, onCommand) {
     else paint();
   }
 
-  return { update, setWinchMeta, setStale };
+  return { update, setWinchMeta, setStale, setReadOnly };
 }

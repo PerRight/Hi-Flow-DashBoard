@@ -20,9 +20,12 @@ export function createMapPanel(containerId) {
     style: makeBasemapStyle(),
     center: [SITE.lon, SITE.lat],
     zoom: 15.4,
-    attributionControl: { compact: true }
+    // 우측 하단 출처(ⓘ) 표기는 화면에서 뺀다 (사용자 확정 2026-09-06).
+    // 출처는 basemap.js 스타일 정의의 attribution 필드에 그대로 남는다.
+    attributionControl: false
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  // 축척 막대는 비워진 우측 하단으로 (흰 배경 · 검은 선, 윗변까지 닫는다 — style.css)
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-right');
 
   const overlay = new MapboxOverlay({ interleaved: false, layers: [] });

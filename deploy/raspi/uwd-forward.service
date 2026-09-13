@@ -1,0 +1,32 @@
+[Unit]
+Description=UWD 클라우드 미러 중계기 (라즈베리파이 -> NCP, CLAUDE.md 0절 forwarder)
+Documentation=https://github.com/PerRight/Hi-Flow-DashBoard
+After=uwd-server.service
+Wants=uwd-server.service
+
+# network-online.target 을 **기다리지 않는다.**
+# LTE 가 없어도 측정은 진행돼야 하고(0절), 이 중계기는 붙을 때까지 알아서 재시도한다.
+# 여기서 네트워크를 기다리게 만들면 오프라인 부팅이 이 유닛에서 멈춘다.
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/Hiflow/raspi
+
+# 토큰은 파일로만 준다 — 명령줄에 쓰면 `ps` 에 그대로 보인다.
+#   sudo install -m 600 -o pi -g pi /dev/null /etc/uwd-mirror.env
+#   sudo nano /etc/uwd-mirror.env
+#     UWD_MIRROR_URL=wss://101.79.22.64.sslip.io/ws/mirror
+#     UWD_MIRROR_TOKEN=<클라우드와 같은 값>
+EnvironmentFile=/etc/uwd-mirror.env
+
+ExecStart=/home/pi/Hiflow/server/.venv/bin/python forward.py \
+          --local ws://localhost:8000
+
+# LTE 끊김은 정상 시나리오다 — 죽으면 계속 되살린다.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

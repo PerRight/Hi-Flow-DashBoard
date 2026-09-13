@@ -18,6 +18,18 @@ WorkingDirectory=/home/hiflow/app/server
 Environment=UWD_MOCK=0
 Environment=UWD_DB=/home/hiflow/app/server/data/records.db
 
+# ── 미러 모드 (사용자 확정 2026-09-13) ─────────────────────────────────
+# 이 서버는 **미러**다: 자기 윈치 상태기계를 돌리지 않고, 라즈베리파이 forwarder 가
+# /ws/mirror 로 보낸 값을 그대로 저장·중계한다 (CLAUDE.md 0절).
+# 이걸 켜지 않으면 클라우드가 제 수심 상태기계를 돌려 보트와 다른 값을 표시한다.
+Environment=UWD_MIRROR=1
+
+# 토큰은 파일로만 준다 — 유닛에 직접 쓰면 `systemctl cat` 으로 그대로 읽힌다.
+#   sudo install -m 600 -o hiflow -g hiflow /dev/null /etc/uwd-mirror.env
+#   sudo nano /etc/uwd-mirror.env      →  UWD_MIRROR_TOKEN=<라즈베리파이와 같은 값>
+# 토큰이 비어 있으면 서버가 기동을 거부한다(인증 없는 수신구를 열지 않는다).
+EnvironmentFile=/etc/uwd-mirror.env
+
 ExecStart=/home/hiflow/app/server/.venv/bin/python -m uvicorn app:app \
           --host 127.0.0.1 --port 8000
 

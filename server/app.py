@@ -4,7 +4,9 @@ app.py — 라즈베리파이 FastAPI 서버 (CLAUDE.md 5절 2단계).
 WebSocket
   /ws/dashboard  대시보드 ↔ 서버. live·측정 레코드 브로드캐스트 + 윈치 명령 수신.
   /ws/ingest     수집기(raspi/feed.py) → 서버.
-                 원시 표본 {seq,ec,tds,temp} 수신(접속 시 목업 자동 정지).
+                 원시 표본 {seq,ec,tds,temp,lat,lon,gps_fix} 수신(접속 시 목업 자동 정지).
+  /ws/mirror     **미러 모드(UWD_MIRROR=1)에서만.** 라즈베리파이 forwarder → 클라우드.
+                 Pi 가 판정을 끝낸 live·측정 레코드를 받아 그대로 저장·중계한다.
 
 REST
   GET /health              서버·윈치 상태
@@ -41,14 +43,18 @@ mock = MockESP32(engine) if config.USE_MOCK else None
 @asynccontextmanager
 async def lifespan(_app):
     store.open()
-    tasks = [
-        asyncio.create_task(engine.run()),
-        asyncio.create_task(store.run_flusher()),
-    ]
-    if mock is not None:
-        tasks.append(asyncio.create_task(mock.run()))
-    print(f"[server] DB={config.DB_PATH} mock={mock is not None} "
-          f"time_scale={config.TIME_SCALE}", flush=True)
+    tasks = [asyncio.create_task(store.run_flusher())]
+    if config.MIRROR:
+        # 미러는 engine.run()(윈치 상태기계·1 Hz 틱)도 목업도 돌리지 않는다.
+        # engine 은 대시보드 클라이언트 관리와 중계에만 쓰인다 (CLAUDE.md 0절).
+        print("[server] ** 미러 모드 ** — 상태기계·목업 정지, /ws/mirror 수신만 한다.",
+              flush=True)
+    else:
+        tasks.append(asyncio.create_task(engine.run()))
+        if mock is not None:
+            tasks.append(asyncio.create_task(mock.run()))
+    print(f"[server] DB={config.DB_PATH} mock={mock is not None and not config.MIRROR} "
+          f"mirror={config.MIRROR} time_scale={config.TIME_SCALE}", flush=True)
     try:
         yield
     finally:
@@ -85,7 +91,12 @@ async def ws_dashboard(ws: WebSocket):
             except json.JSONDecodeError:
                 continue
             cmd = msg.get("cmd")
-            if cmd in COMMANDS:
+            if config.MIRROR:
+                # 원격 대시보드는 읽기 전용이다 (CLAUDE.md 0절). UI 가 버튼을
+                # 숨기지만, 구버전 대시보드·직접 호출까지 막으려면 서버도 거절해야 한다.
+                await ws.send_text(json.dumps(
+                    {"type": "ack", "cmd": cmd, "ok": False, "reason": "mirror"}))
+            elif cmd in COMMANDS:
                 # survey_start 는 site/date/memo 를 함께 받는다 (2026-08-29)
                 ok = await engine.command(cmd, msg)
                 await ws.send_text(json.dumps({"type": "ack", "cmd": cmd, "ok": bool(ok)}))
@@ -137,24 +148,104 @@ async def ws_ingest(ws: WebSocket):
         engine.ingest_clients = max(0, engine.ingest_clients - 1)
 
 
+@app.websocket("/ws/mirror")
+async def ws_mirror(ws: WebSocket):
+    """라즈베리파이 forwarder → 클라우드 미러 (사용자 확정 2026-09-13).
+
+    핸드셰이크
+        → {"type":"hello","token":"…"}
+        ← {"type":"ready","max_ts":N}     N 보다 새 레코드만 보내면 된다(백필 기준점)
+
+    이후 스트림
+        {"type":"live",   ...}            그대로 중계만 (저장 안 함 — CLAUDE.md 1절)
+        {"type":"record", "rec":{…}}      저장 + 중계
+        {"type":"survey", "row":{…}}      차수 행 복제 (id 그대로)
+        {"type":"backfill","records":[…]} LTE 끊김 구간 재전송 — 저장만, 중계 안 함
+
+    미러가 아니면 아예 열지 않는다. 보트 위 정본 서버에 이 구멍이 열려 있으면
+    외부에서 측정 기록을 주입할 수 있다.
+    """
+    if not config.MIRROR:
+        await ws.close(code=4003)
+        return
+    await ws.accept()
+
+    # 토큰 대조. 첫 메시지가 hello 가 아니거나 토큰이 틀리면 즉시 끊는다.
+    try:
+        hello = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
+    except Exception:
+        await ws.close(code=4400)
+        return
+    if hello.get("type") != "hello" or hello.get("token") != config.MIRROR_TOKEN:
+        print("[mirror] 토큰 불일치 — 연결 거부", flush=True)
+        await ws.close(code=4401)
+        return
+
+    max_ts = await asyncio.to_thread(store.max_ts)
+    await ws.send_text(json.dumps({"type": "ready", "max_ts": max_ts}))
+    engine.mirror_clients += 1
+    print(f"[mirror] forwarder 접속 — max_ts={max_ts}", flush=True)
+
+    try:
+        while True:
+            msg = json.loads(await ws.receive_text())
+            kind = msg.get("type")
+
+            if kind == "live":
+                await engine.relay(msg | {"mirror": True})
+
+            elif kind == "record":
+                rec = msg.get("rec") or {}
+                if await asyncio.to_thread(store.mirror_record, rec):
+                    engine.records_made += 1
+                await engine.relay(rec)          # 대시보드는 record 를 그대로 받는다
+
+            elif kind == "survey":
+                await asyncio.to_thread(store.mirror_survey, msg.get("row") or {})
+
+            elif kind == "backfill":
+                rows = msg.get("records") or []
+                n = 0
+                for rec in rows:
+                    n += await asyncio.to_thread(store.mirror_record, rec)
+                engine.records_made += n
+                engine.backfilled += n
+                print(f"[mirror] 백필 {n}/{len(rows)}건 저장", flush=True)
+                await ws.send_text(json.dumps({"type": "backfill_ok", "stored": n}))
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        print(f"[mirror] 끊김: {type(exc).__name__}: {exc}", flush=True)
+    finally:
+        engine.mirror_clients = max(0, engine.mirror_clients - 1)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # REST
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.get("/health")
 async def health():
+    # 미러는 자기 상태기계를 안 돌리므로 engine.state/depth 가 의미 없다.
+    # 마지막으로 중계받은 live 를 그대로 보고한다 (Pi 가 정본).
+    live = engine.mirror_live if config.MIRROR else None
     return {
         "status": "ok",
-        "state": engine.state,
-        "depth_est": round(engine.depth, 3),
+        "mirror": config.MIRROR,
+        "forwarders": engine.mirror_clients,
+        "backfilled": engine.backfilled,
+        "state": live.get("state") if live else engine.state,
+        "depth_est": live.get("depth_est") if live else round(engine.depth, 3),
         "survey": engine.survey,
         "survey_active": engine.survey_active,
         "site": engine.site,
         "round": engine.round,
-        "source": "esp32" if engine.ingest_clients else ("mock" if mock else "none"),
-        "gps": engine.gps_state(),
-        "gps_lat": engine.gps_lat,
-        "gps_lon": engine.gps_lon,
+        "source": ("forwarder" if engine.mirror_clients else "none") if config.MIRROR
+                  else ("esp32" if engine.ingest_clients else ("mock" if mock else "none")),
+        "gps": (live.get("gps") if live else "none") if config.MIRROR else engine.gps_state(),
+        "gps_lat": (live.get("lat") if live else None) if config.MIRROR else engine.gps_lat,
+        "gps_lon": (live.get("lon") if live else None) if config.MIRROR else engine.gps_lon,
         "dashboards": len(engine.clients),
         "live_sent": engine.live_sent,
         "records_made": engine.records_made,

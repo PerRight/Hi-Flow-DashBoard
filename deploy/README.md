@@ -7,7 +7,7 @@
 | | 클라우드 (NCP) | 라즈베리파이 (보트) |
 |---|---|---|
 | 역할 | 미러 · 원격 열람 | **정본** · 측정·저장 |
-| 켜는 서비스 | `uwd-server` (미러 모드) | `uwd-server` + `uwd-feed` |
+| 켜는 서비스 | `uwd-server` (`UWD_MIRROR=1`) | `uwd-server` + `uwd-feed` + `uwd-forward` |
 | 대시보드 | nginx 로 서빙 (원격) | 핫스팟으로 서빙 (보트 위) |
 | 인터넷 없으면 | 원격 열람만 중단 | **아무 영향 없음 — 측정 계속** |
 
@@ -191,6 +191,58 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idSerial}=="XXXX", SYMLINK+="uw
 
 ---
 
+## B-7. 미러 중계기 (`uwd-forward`) — 원격에서 보려면 필수
+
+이게 없으면 클라우드 대시보드는 **빈 화면**입니다. 보트 데이터가 올라갈 길이 없습니다.
+
+먼저 **양쪽에 같은 토큰**을 넣습니다. 아무 문자열이나 길게 하나 만드세요
+(`python3 -c "import secrets;print(secrets.token_urlsafe(32))"`).
+
+```bash
+# 라즈베리파이 · 클라우드 둘 다에서 (경로만 같고 내용도 같아야 합니다)
+sudo install -m 600 /dev/null /etc/uwd-mirror.env
+sudo nano /etc/uwd-mirror.env
+```
+
+라즈베리파이:
+```
+UWD_MIRROR_URL=wss://101.79.22.64.sslip.io/ws/mirror
+UWD_MIRROR_TOKEN=<위에서 만든 토큰>
+```
+
+클라우드(URL 은 필요 없습니다):
+```
+UWD_MIRROR_TOKEN=<같은 토큰>
+```
+
+> 토큰을 유닛 파일에 직접 쓰지 마세요 — `systemctl cat` 으로 그대로 읽힙니다.
+> 명령줄 인자도 안 됩니다 — `ps` 에 보입니다.
+
+등록:
+```bash
+sudo cp ~/Hiflow/deploy/raspi/uwd-forward.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now uwd-forward
+journalctl -u uwd-forward -n 30 --no-pager
+```
+
+확인 — **클라우드에서**:
+```bash
+curl -s localhost:8000/health | python3 -m json.tool | grep -E 'mirror|forwarders|db_rows'
+```
+`"forwarders": 1` 이면 붙은 겁니다. `"mirror": true` 도 같이 확인하세요.
+
+붙지 않을 때:
+
+| 로그 | 원인 |
+|---|---|
+| `핸드셰이크 실패` / 즉시 끊김 | 토큰 불일치 — 양쪽 `/etc/uwd-mirror.env` 비교 |
+| `4003` 으로 닫힘 | 클라우드에 `UWD_MIRROR=1` 이 없음 |
+| 클라우드가 기동 거부 | `UWD_MIRROR_TOKEN` 이 비었음 (의도된 동작) |
+| 연결 자체가 안 됨 | LTE 끊김 — **정상 시나리오**. 붙으면 백필로 따라잡습니다 |
+
+---
+
 ## C. 코드 갱신 (앞으로의 일상)
 
 ```bash
@@ -198,6 +250,7 @@ cd ~/app
 git pull
 sudo systemctl restart uwd-server      # 파이썬 코드를 고쳤으면
 cd dashboard && npm run build          # 대시보드를 고쳤으면 (클라우드만)
+sudo systemctl restart uwd-forward     # forward.py 를 고쳤으면 (라즈베리파이만)
 ```
 
 ---
@@ -214,6 +267,10 @@ curl localhost:8000/health
 | 증상 | 원인 | 조치 |
 |---|---|---|
 | `source: "none"` | feed 가 안 붙음 | `journalctl -u uwd-feed` |
+| 클라우드가 `source: "none"` | forwarder 가 안 붙음 | `journalctl -u uwd-forward` (B-7) |
+| 원격 화면이 비어 있음 | 미러에 백필이 안 됨 | 클라우드 `/health` 의 `backfilled` 확인 |
+| 원격에 조작 버튼이 보임 | `UWD_MIRROR=1` 누락 | 클라우드 유닛 확인 — 미러여야 버튼이 숨는다 |
+| `gps: "wait"` | GPS FIX 미확보 | 실외에서 대기. `python3 gps.py` 로 NMEA 수신 확인 |
 | `source: "mock"` | 목업이 켜짐 | 유닛에서 `UWD_MOCK=1` 제거 (6절 위반) |
 | feed: Permission denied | dialout 그룹 미적용 | B-1 후 재로그인 |
 | feed: 값이 깨짐 | ModemManager 간섭 | B-2 |

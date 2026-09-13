@@ -21,10 +21,23 @@ const FLAG_TEXT = {
 
 // 색 구간 경계 수치 — 화면에 그대로 적어 준다 (사용자 확정 2026-09-02).
 // "초록↔노랑" = 정상 상한, "노랑↔빨강" = 위험 임계값. CLAUDE.md 1절 표와 같은 값이다.
+// ticks = 눈금 위에 세울 경계선 [값, 색] / text = 아래에 적을 문구 [클래스, 문구]
+// 수온도 경계를 표시한다 (사용자 확정 2026-09-06) — 주의 구간이 없을 뿐,
+// 35 ℃ 를 넘으면 위험(내부적으로는 fault)이라는 경계 자체는 있다.
+// 표기는 EC·TDS 와 같은 "위험 N↑" 꼴로 통일한다 (2026-09-06).
 const GAUGE_BOUNDS = {
-  temp: null,                       // 수온은 주의 구간이 없다 (0~35 밖이면 fault)
-  ec: { caution: 280, danger: 700 },
-  tds: { caution: 140, danger: 350 }
+  temp: {
+    ticks: [[35, '#C62828']],
+    text: [['b-ok', '정상 0~35'], ['b-danger', '위험 35↑']]
+  },
+  ec: {
+    ticks: [[280, '#B26A00'], [700, '#C62828']],
+    text: [['b-caution', '주의 280↑'], ['b-danger', '위험 700↑']]
+  },
+  tds: {
+    ticks: [[140, '#B26A00'], [350, '#C62828']],
+    text: [['b-caution', '주의 140↑'], ['b-danger', '위험 350↑']]
+  }
 };
 
 // 눈금 위 색 구간: [시작, 끝, 색]. 하한 미만도 정상이므로 초록이 0 에서 시작한다.
@@ -67,9 +80,7 @@ function gaugeMarkup(metric, name, unit) {
   const [hx, hy] = polar(START + SWEEP);
   // 색이 바뀌는 지점에 짧은 눈금을 세워 아래 숫자와 이어 준다 (2026-09-02)
   const bounds = GAUGE_BOUNDS[metric];
-  const boundTicks = !bounds ? '' : [
-    [bounds.caution, '#B26A00'], [bounds.danger, '#C62828']
-  ].map(([v, c]) => {
+  const boundTicks = !bounds ? '' : bounds.ticks.map(([v, c]) => {
     const deg = valueToDeg(metric, v);
     const rad = (deg * Math.PI) / 180;
     const x1 = CX + (R - 5) * Math.cos(rad), y1 = CY + (R - 5) * Math.sin(rad);
@@ -77,11 +88,9 @@ function gaugeMarkup(metric, name, unit) {
     return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}"
                   y2="${y2.toFixed(1)}" stroke="${c}" stroke-width="1.6" stroke-linecap="round"/>`;
   }).join('');
-  const boundText = bounds
-    ? `<span class="b b-caution">주의 ${bounds.caution}</span>`
-      + `<span class="b-sep">·</span>`
-      + `<span class="b b-danger">위험 ${bounds.danger}</span>`
-    : `<span class="b b-ok">정상 0~35</span>`;
+  const boundText = !bounds ? '' : bounds.text
+    .map(([cls, t]) => `<span class="b ${cls}">${t}</span>`)
+    .join('<span class="b-sep">·</span>');
   return `
     <div class="gauge" data-metric="${metric}">
       <div class="gauge-name">${name}</div>

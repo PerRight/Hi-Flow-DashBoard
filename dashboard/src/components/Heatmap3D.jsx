@@ -287,7 +287,8 @@ export default function Heatmap3D({ agg, metric, depth, selected, onSelect }) {
         )}
         {!empty && agg.bounds?.degenerate && (
           <div className="heat-note">
-            측정 지점이 한 곳뿐입니다 — 배를 옮겨 여러 지점을 측정하면 격자가 채워집니다
+            측정 지점이 한 곳 뿐입니다<br />
+            다음 지점으로 이동해서 맵핑을 채워주세요
           </div>
         )}
         {tip && (

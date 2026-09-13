@@ -77,6 +77,9 @@ export function createWsClient(options = {}) {
   let lastDepth = 0;            // 마지막 live 의 depth_est
   // 열려 있는 차수 (2026-08-29). 서버가 live 에 실어 보내므로 대시보드가 추측하지 않는다.
   let survey = null, site = null, round = null, surveyDate = null, surveyOpen = false;
+  // 원격(클라우드 미러) 화면인가 — 서버가 live 에 실어 보낸다 (2026-09-13).
+  // 참이면 윈치·차수 조작을 숨긴다 (CLAUDE.md 0절: 원격 대시보드는 읽기 전용).
+  let mirror = false;
 
   function emitState(depthEst = lastDepth) {
     const s = {
@@ -87,7 +90,8 @@ export function createWsClient(options = {}) {
       nextLevel: DEPTH_LEVELS.find((l) => l > depthEst + 1e-9) ?? null,
       levels: DEPTH_LEVELS,
       surveyOpen,
-      survey, site, round, surveyDate
+      survey, site, round, surveyDate,
+      mirror
     };
     stateCbs.forEach((cb) => cb(s));
   }
@@ -101,6 +105,13 @@ export function createWsClient(options = {}) {
     if (Date.now() < ignoreUntil) return;   // 연결 끊김 재현 중
 
     if (msg.type === 'live') {
+      // 원격 여부는 **stale 조기 반환보다 먼저** 읽는다. 값이 낡았다고 미룰 수 없는
+      // 정보다 — LTE 가 끊긴 원격 화면에 조작 버튼이 되살아나면 안 된다.
+      if ('mirror' in msg && !!msg.mirror !== mirror) {
+        mirror = !!msg.mirror;
+        emitState();
+      }
+
       // status:'stale' = 라즈베리파이가 ESP32 표본을 2초 이상 못 받은 상태.
       // 오래된 값을 정상처럼 그리면 안 되므로(CLAUDE.md 6절) 콜백을 호출하지 않는다.
       // 그러면 main.js 의 마지막 수신 시각이 갱신되지 않아 stale UI 로 자동 전환된다.

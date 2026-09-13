@@ -6,7 +6,8 @@
 import { useEffect, useRef } from 'react';
 import { createDepthPanel } from '../panels/depth.js';
 
-export default function DepthPanel({ depthSeq, depthMsgRef, winchMeta, stale, onCommand }) {
+export default function DepthPanel({ depthSeq, depthMsgRef, winchMeta, stale, onCommand,
+                                     readOnly = false }) {
   const containerRef = useRef(null);
   const panelRef = useRef(null);
 
@@ -27,10 +28,14 @@ export default function DepthPanel({ depthSeq, depthMsgRef, winchMeta, stale, on
     panelRef.current.setStale(stale);
   }, [stale]);
 
+  useEffect(() => {
+    panelRef.current.setReadOnly(readOnly);
+  }, [readOnly]);
+
   return (
     <section className="panel a-depth" id="panel-depth">
       <h2 className="panel-title">
-        현재 수심 <span className="hint">추정 · 윈치 시간 적분</span>
+        현재 수심
       </h2>
       <div className="panel-body" ref={containerRef} />
     </section>
