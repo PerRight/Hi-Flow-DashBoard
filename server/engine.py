@@ -133,6 +133,26 @@ class Engine:
         self.mirror_live = None
         self.mirror_clients = 0          # 붙어 있는 forwarder 수
         self.backfilled = 0              # 백필로 받아 저장한 레코드 수
+        # 미러 → forwarder → Pi 로 나갈 명령 큐 (사용자 확정 2026-09-13).
+        # 상태기계는 Pi 에 그대로 있고 여기서는 **버튼 누름만 중계**한다.
+        # 큐가 밀리면 오래된 것부터 버린다 — 몇 초 전 '내림'이 뒤늦게 실행되면
+        # 실제 윈치와 어긋난다. 늦은 명령은 실행하느니 버리는 편이 안전하다.
+        self.cmd_q = asyncio.Queue(maxsize=16)
+
+    def queue_command(self, msg):
+        """대시보드 명령을 forwarder 로 보낼 큐에 넣는다. 붙은 forwarder 가 없으면 False."""
+        if self.mirror_clients <= 0:
+            return False
+        if self.cmd_q.full():
+            try:
+                self.cmd_q.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        try:
+            self.cmd_q.put_nowait(msg)
+            return True
+        except asyncio.QueueFull:
+            return False
 
     # ── 미러 중계 (클라우드 전용) ─────────────────────────────────────────
     async def relay(self, msg):
@@ -432,6 +452,11 @@ class Engine:
             # 키가 없으면 경고를 띄우지 않는다(옛 동작 그대로 폴백).
             "gps": gps_state,
             "gps_age": gps_age,
+            # 이 화면에서 조작이 실제로 Pi 까지 갈 수 있는가 (사용자 확정 2026-09-13).
+            # 보트 위 정본은 언제나 참이다. 미러는 forwarder 가 붙어 있을 때만 참으로
+            # 바꿔 내보낸다 — 끊긴 채 버튼이 살아 있으면 눌러도 아무 일이 안 일어나고
+            # 조작자는 윈치가 내려간 줄 안다 (6절).
+            "control": True,
         }
         await self._broadcast(live)
         self.live_sent += 1

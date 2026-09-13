@@ -66,7 +66,8 @@ export function useDashboardData() {
     measuring: false, holdElapsed: 0, holdTotal: HOLD_SECONDS, holdDone: false,
     nextLevel: null, levels: [],
     surveyOpen: false, survey: null, site: null, round: null, surveyDate: null,
-    mirror: false          // 원격(클라우드 미러) 화면 — 읽기 전용 (2026-09-13)
+    mirror: false,         // 원격(클라우드 미러) 화면인가 — 헤더 표시용
+    control: true          // 명령이 라즈베리파이까지 갈 수 있는가 (2026-09-13)
   });
   const [stale, setStale] = useState(false);
   const [linkUp, setLinkUp] = useState(false);

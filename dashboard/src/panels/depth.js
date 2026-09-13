@@ -91,7 +91,7 @@ export function createDepthPanel(root, onCommand) {
           <button class="btn sec" data-cmd="measure_end" id="btn-end">측정 완료</button>
         </div>
         <p class="hint sync-note" id="sync-note" title="내림·정지·올림·측정 시작·측정 완료 — 대시보드 버튼은 실제 윈치 조작과 동시에 눌러야 수심 추정이 맞습니다">버튼을 동시에 눌러주세요.</p>
-        <p class="note remote-note" id="remote-note" hidden>원격 화면입니다 — 윈치 조작은 보트 위 대시보드에서만 할 수 있습니다.</p>
+        <p class="note remote-note" id="remote-note" hidden>보트와의 연결이 끊겨 조작할 수 없습니다 — 실제 윈치를 움직여도 수심이 기록되지 않습니다.</p>
       </div>
     </div>`;
 
@@ -124,19 +124,22 @@ export function createDepthPanel(root, onCommand) {
   };
   const btnDown = el.buttons.find((b) => b.dataset.cmd === 'down');
 
-  // 원격(클라우드 미러) 화면에서는 조작을 아예 감춘다 (CLAUDE.md 0절).
-  let readOnly = false;
+  // 명령이 라즈베리파이까지 갈 수 없으면 조작을 막는다 (사용자 확정 2026-09-13).
+  // **숨기지 않고 비활성화**한다 — 버튼이 통째로 사라지면 조작자가 "원래 없는 화면"
+  // 으로 오해한다. 회색으로 남겨 두고 이유를 적는 편이 낫다.
+  let noControl = false;
   function setReadOnly(on) {
-    readOnly = !!on;
-    el.winchBtns.hidden = readOnly;
-    el.measureBtns.hidden = readOnly;
-    el.syncNote.hidden = readOnly;
-    el.remoteNote.hidden = !readOnly;
+    noControl = !!on;
+    el.winchBtns.classList.toggle('disabled', noControl);
+    el.measureBtns.classList.toggle('disabled', noControl);
+    el.syncNote.hidden = noControl;
+    el.remoteNote.hidden = !noControl;
+    el.buttons.forEach((b) => { if (noControl) b.disabled = true; });
   }
 
   el.buttons.forEach((b) => {
     b.addEventListener('click', () => {
-      if (readOnly || b.disabled) return;
+      if (noControl || b.disabled) return;
       onCommand(b.dataset.cmd);
     });
   });
@@ -221,10 +224,10 @@ export function createDepthPanel(root, onCommand) {
     // ── 버튼 가능 여부 ────────────────────────────────────────────────
     const measuring = meta.measuring || state !== 'SURFACE';
     // 차수가 없으면 측정 시작 자체를 막는다 — 눌러도 서버가 거절한다.
-    el.btnStart.disabled = measuring || depth > EPS || !meta.surveyOpen;
+    el.btnStart.disabled = noControl || measuring || depth > EPS || !meta.surveyOpen;
     el.btnStart.title = meta.surveyOpen ? '' : '차수를 먼저 시작하세요';
-    el.btnEnd.disabled = !measuring;
-    btnDown.disabled = !measuring || nextLv === null || state === 'DESCENDING';
+    el.btnEnd.disabled = noControl || !measuring;
+    btnDown.disabled = noControl || !measuring || nextLv === null || state === 'DESCENDING';
 
     el.buttons.forEach((b) => {
       const active =

@@ -92,10 +92,21 @@ async def ws_dashboard(ws: WebSocket):
                 continue
             cmd = msg.get("cmd")
             if config.MIRROR:
-                # 원격 대시보드는 읽기 전용이다 (CLAUDE.md 0절). UI 가 버튼을
-                # 숨기지만, 구버전 대시보드·직접 호출까지 막으려면 서버도 거절해야 한다.
-                await ws.send_text(json.dumps(
-                    {"type": "ack", "cmd": cmd, "ok": False, "reason": "mirror"}))
+                # 미러는 명령을 **직접 실행하지 않는다** — forwarder 를 거쳐 Pi 로
+                # 넘기고, 상태기계는 Pi 에 그대로 둔다 (사용자 확정 2026-09-13).
+                # 여기서 수심을 적분하면 보트와 클라우드가 서로 다른 수심을 말하게 된다.
+                if cmd not in COMMANDS:
+                    print(f"[server] 알 수 없는 명령: {cmd!r}", flush=True)
+                elif engine.queue_command(msg):
+                    # 아직 '전달됨'일 뿐이다. 진짜 결과(ok)는 Pi 가 판단해
+                    # forwarder 를 타고 되돌아와 모든 대시보드로 방송된다.
+                    await ws.send_text(json.dumps(
+                        {"type": "ack", "cmd": cmd, "ok": True, "relayed": True}))
+                else:
+                    # 보트와의 연결이 끊겼다. **조용히 삼키면 안 된다** —
+                    # 조작자는 윈치가 내려간 줄 알고 실제 윈치를 조작한다 (6절).
+                    await ws.send_text(json.dumps(
+                        {"type": "ack", "cmd": cmd, "ok": False, "reason": "offline"}))
             elif cmd in COMMANDS:
                 # survey_start 는 site/date/memo 를 함께 받는다 (2026-08-29)
                 ok = await engine.command(cmd, msg)
@@ -186,13 +197,23 @@ async def ws_mirror(ws: WebSocket):
     engine.mirror_clients += 1
     print(f"[mirror] forwarder 접속 — max_ts={max_ts}", flush=True)
 
+    async def pump_commands():
+        """대시보드 명령을 forwarder 로 밀어 넣는다 (미러 → Pi 방향)."""
+        while True:
+            cmd = await engine.cmd_q.get()
+            await ws.send_text(json.dumps({"type": "cmd", "msg": cmd}))
+
+    pump = asyncio.create_task(pump_commands())
     try:
         while True:
             msg = json.loads(await ws.receive_text())
             kind = msg.get("type")
 
             if kind == "live":
-                await engine.relay(msg | {"mirror": True})
+                # Pi 는 control:true 로 보내지만, 미러에서는 **forwarder 가 붙어
+                # 있을 때만** 참이다. 지금 이 소켓이 살아 있으니 참이지만,
+                # 끊기면 live 자체가 멈춰 대시보드가 stale 로 넘어간다.
+                await engine.relay(msg | {"mirror": True, "control": True})
 
             elif kind == "record":
                 rec = msg.get("rec") or {}
@@ -202,6 +223,10 @@ async def ws_mirror(ws: WebSocket):
 
             elif kind == "survey":
                 await asyncio.to_thread(store.mirror_survey, msg.get("row") or {})
+
+            elif kind == "ack":
+                # Pi 가 낸 진짜 판정 결과. 누가 눌렀는지 모르므로 모든 대시보드에 방송한다.
+                await engine.relay(msg.get("ack") or {})
 
             elif kind == "backfill":
                 rows = msg.get("records") or []
@@ -218,6 +243,7 @@ async def ws_mirror(ws: WebSocket):
     except Exception as exc:
         print(f"[mirror] 끊김: {type(exc).__name__}: {exc}", flush=True)
     finally:
+        pump.cancel()
         engine.mirror_clients = max(0, engine.mirror_clients - 1)
 
 

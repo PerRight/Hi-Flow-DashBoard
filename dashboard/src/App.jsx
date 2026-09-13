@@ -133,7 +133,7 @@ export default function App() {
             list="site-options"
             value={siteDraft}
             onChange={(e) => setSiteDraft(e.target.value)}
-            readOnly={d.winchMeta.surveyOpen || !!d.winchMeta.mirror}
+            readOnly={d.winchMeta.surveyOpen || d.winchMeta.control === false}
             placeholder="조사 지점 메모"
             aria-label="조사 지점"
             title={d.winchMeta.surveyOpen
@@ -143,10 +143,14 @@ export default function App() {
           {d.winchMeta.surveyOpen && (
             <span className="round-chip">{d.winchMeta.round}차 측정 중</span>
           )}
-          {/* 원격(클라우드 미러) 화면임을 항상 보이게 — 보트 위 화면과 헷갈리면
-              조작자가 왜 버튼이 없는지 알 수 없다 (사용자 확정 2026-09-13). */}
+          {/* 클라우드 화면임을 항상 보이게 — 조작은 되지만 명령이 보트까지
+              한 번 더 건너간다는 사실을 조작자가 알아야 한다 (2026-09-13).
+              중계가 끊기면 같은 자리에서 '조작 불가'로 바뀐다. */}
           {d.winchMeta.mirror && (
-            <span className="remote-chip">원격 · 읽기 전용</span>
+            <span className={d.winchMeta.control === false
+              ? 'remote-chip warn' : 'remote-chip'}>
+              {d.winchMeta.control === false ? '보트 연결 끊김 · 조작 불가' : '클라우드 · 원격 조작'}
+            </span>
           )}
         </div>
 
@@ -215,7 +219,7 @@ export default function App() {
           winchMeta={d.winchMeta}
           stale={d.stale}
           onCommand={d.sendCommand}
-          readOnly={!!d.winchMeta.mirror}
+          readOnly={d.winchMeta.control === false}
         />
 
         <GaugePanel

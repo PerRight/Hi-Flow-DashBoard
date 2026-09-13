@@ -91,9 +91,13 @@ select{
 /* hidden 속성이 display:flex 에 지지 않도록 — 원격 모드에서 버튼을 감출 때 쓴다. */
 [hidden]{display:none !important}
 .remote-chip{
-  font-size:12px; font-weight:700; color:#5B3A00; background:var(--caution-bg);
-  border:1px solid #EBD3A8; border-radius:999px; padding:3px 10px; white-space:nowrap;
+  font-size:12px; font-weight:700; color:var(--brand-700); background:rgba(255,255,255,.8);
+  border:1px solid var(--brand-500); border-radius:999px; padding:3px 10px; white-space:nowrap;
 }
+/* 중계가 끊겨 조작이 안 되는 상태 — 평상시와 색이 달라야 한 눈에 보인다. */
+.remote-chip.warn{color:#5B3A00; background:var(--caution-bg); border-color:#EBD3A8}
+/* 조작 불가일 때 버튼 묶음을 통째로 흐리게 — 숨기지는 않는다(있는데 못 쓰는 상태). */
+.winch-btns.disabled, .measure-btns.disabled{opacity:.45}
 .remote-note{color:var(--t-dim); font-size:12px; line-height:1.5; margin:0}
 .gps-chip.ok{color:var(--ok); background:var(--ok-bg); border:1px solid #BFE6D5}
 .gps-chip.warn{color:var(--caution); background:var(--caution-bg); border:1px solid #EBD3A8}

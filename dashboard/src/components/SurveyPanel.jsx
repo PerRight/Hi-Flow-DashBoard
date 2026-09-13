@@ -19,8 +19,9 @@ export default function SurveyPanel({
   site, onSite, siteOptions, rows, winchMeta, onStart, onEnd, stale
 }) {
   const open = !!winchMeta.surveyOpen;
-  // 원격(클라우드 미러) 화면 — 차수 조작은 보트 위에서만 (CLAUDE.md 0절, 2026-09-13)
-  const remote = !!winchMeta.mirror;
+  // 명령이 라즈베리파이까지 갈 수 있는가 (사용자 확정 2026-09-13).
+  // 클라우드에서도 차수를 열고 닫을 수 있지만, 중계가 끊기면 막는다.
+  const remote = winchMeta.control === false;
   const today = todayStr();
   const name = (site ?? '').trim();
 
@@ -65,23 +66,22 @@ export default function SurveyPanel({
             : `${today} 조사지를 먼저 적어주세요.`}
       </div>
 
-      {!remote && (
-        <div className="survey-btns">
-          <button type="submit" className="btn" disabled={!canStart}>
-            {open ? '차수 진행 중' : (name ? `${nextRound}차 시작` : '차수 시작')}
-          </button>
-          <button type="button" className="btn sec" onClick={onEnd} disabled={!open}>
-            차수 종료
-          </button>
-        </div>
-      )}
+      <div className="survey-btns">
+        <button type="submit" className="btn" disabled={!canStart}>
+          {open ? '차수 진행 중' : (name ? `${nextRound}차 시작` : '차수 시작')}
+        </button>
+        <button type="button" className="btn sec" onClick={onEnd}
+                disabled={remote || !open}>
+          차수 종료
+        </button>
+      </div>
 
       {/* 안내 문구는 두 줄로 끊어 준다 (사용자 확정 2026-09-06) — 한 덩어리면 읽히지 않는다. */}
       <p className="note note-lines">
         {remote ? (
           <>
-            <span>원격 화면입니다 — 보기만 할 수 있습니다.</span>
-            <span>차수 시작·종료는 보트 위 대시보드에서 합니다.</span>
+            <span>보트와의 연결이 끊겨 차수를 조작할 수 없습니다.</span>
+            <span>연결이 돌아오면 자동으로 다시 눌러집니다.</span>
           </>
         ) : open ? (
           <>

@@ -77,9 +77,13 @@ export function createWsClient(options = {}) {
   let lastDepth = 0;            // 마지막 live 의 depth_est
   // 열려 있는 차수 (2026-08-29). 서버가 live 에 실어 보내므로 대시보드가 추측하지 않는다.
   let survey = null, site = null, round = null, surveyDate = null, surveyOpen = false;
-  // 원격(클라우드 미러) 화면인가 — 서버가 live 에 실어 보낸다 (2026-09-13).
-  // 참이면 윈치·차수 조작을 숨긴다 (CLAUDE.md 0절: 원격 대시보드는 읽기 전용).
+  // 원격(클라우드 미러) 화면인가 — 헤더 표시용. 조작 가부와는 별개다 (2026-09-13).
   let mirror = false;
+  // 지금 이 화면의 명령이 **실제로 라즈베리파이까지 갈 수 있는가**.
+  // 보트 위 정본은 항상 참이고, 클라우드는 forwarder 가 붙어 있을 때만 참이다.
+  // 거짓인데 버튼이 살아 있으면 조작자가 눌러 놓고 윈치가 내려간 줄 안다 (6절).
+  // 키가 없는 구버전 서버에서는 참으로 둔다(옛 동작 유지).
+  let control = true;
 
   function emitState(depthEst = lastDepth) {
     const s = {
@@ -91,12 +95,17 @@ export function createWsClient(options = {}) {
       levels: DEPTH_LEVELS,
       surveyOpen,
       survey, site, round, surveyDate,
-      mirror
+      mirror, control
     };
     stateCbs.forEach((cb) => cb(s));
   }
 
   function emitLink(connected) {
+    // 서버 연결이 끊기면 명령이 갈 길도 없다. 버튼을 잠그기 위해 control 을 내린다.
+    if (!connected && control) {
+      control = false;
+      emitState();
+    }
     linkCbs.forEach((cb) => cb(connected));
   }
 
@@ -107,8 +116,11 @@ export function createWsClient(options = {}) {
     if (msg.type === 'live') {
       // 원격 여부는 **stale 조기 반환보다 먼저** 읽는다. 값이 낡았다고 미룰 수 없는
       // 정보다 — LTE 가 끊긴 원격 화면에 조작 버튼이 되살아나면 안 된다.
-      if ('mirror' in msg && !!msg.mirror !== mirror) {
-        mirror = !!msg.mirror;
+      const nextMirror = 'mirror' in msg ? !!msg.mirror : mirror;
+      const nextControl = 'control' in msg ? !!msg.control : control;
+      if (nextMirror !== mirror || nextControl !== control) {
+        mirror = nextMirror;
+        control = nextControl;
         emitState();
       }
 

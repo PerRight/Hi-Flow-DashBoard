@@ -17,7 +17,13 @@ CLAUDE.md 0절의 `forwarder → LTE → NCP 클라우드 서버 (미러)` 다.
     - **live 는 백필하지 않는다.** live 는 저장 대상이 아니라서(1절) 되돌릴 원본이
       없다. 끊긴 구간은 원격 화면에서 공백으로 남는 것이 맞다 — 없는 값을
       메워 넣으면 6절이 금지한 "오래된 데이터를 정상처럼" 이 된다.
-    - **윈치 명령은 절대 보내지 않는다.** 이 연결은 단방향이다.
+    - **명령은 클라우드에서 되돌아온다** (사용자 확정 2026-09-13). 조작자가 보트 위에서
+      클라우드 화면을 쓰기 때문에 원격 조작을 허용한다. 다만 **상태기계는 Pi 에 그대로**
+      있고, 이 프로그램은 버튼 누름을 Pi 의 /ws/dashboard 로 넘기기만 한다.
+      클라우드가 수심을 적분하면 보트와 클라우드가 서로 다른 수심을 말하게 된다.
+    - 클라우드 연결이 끊기면 **명령이 갈 길도 끊긴다.** 미러가 이 사실을 알고
+      대시보드 버튼을 잠그므로, 여기서 큐에 쌓아 두었다가 나중에 실행하지 않는다 —
+      몇 분 전 '내림'이 뒤늦게 실행되면 실제 윈치와 어긋난다.
 
 사용법
     UWD_MIRROR_TOKEN=... python3 forward.py --cloud wss://<호스트>/ws/mirror
@@ -65,6 +71,9 @@ class Forwarder:
         self.sent = 0
         self.dropped = 0
         self.last_survey = None
+        # 주의: local_ws 는 **URL 문자열**이다. 명령을 되돌려 보낼 소켓은 별도 이름으로 둔다.
+        self.local_sock = None
+        self.relayed_cmds = 0
 
     # ── 라즈베리파이 구독 ─────────────────────────────────────────────────
     async def watch_local(self):
@@ -75,10 +84,14 @@ class Forwarder:
                 url = f"{self.local_ws}/ws/dashboard"
                 async with websockets.connect(url, open_timeout=5, ping_interval=20) as ws:
                     log(f"라즈베리파이 구독 시작 {url}")
+                    self.local_sock = ws        # 명령을 여기로 되돌려 보낸다
                     backoff = BACKOFF_START
-                    while True:
-                        msg = json.loads(await ws.recv())
-                        await self.on_local(msg)
+                    try:
+                        while True:
+                            msg = json.loads(await ws.recv())
+                            await self.on_local(msg)
+                    finally:
+                        self.local_sock = None
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -96,9 +109,31 @@ class Forwarder:
                 await self.push({"type": "survey", "row": await self.survey_row(sid)})
             await self.push(msg)
         elif msg.get("type") == "ack":
-            pass                                  # 명령을 보내지 않으므로 올 일이 없다
+            # Pi 의 진짜 판정 결과 — 클라우드로 되돌려 대시보드에 알린다.
+            await self.push({"type": "ack", "ack": msg})
         elif "depth" in msg and "survey" in msg:
             await self.push({"type": "record", "rec": msg})   # 측정 레코드
+
+    async def on_cloud_cmd(self, cmd):
+        """클라우드 대시보드가 누른 버튼을 Pi 로 넘긴다 (사용자 확정 2026-09-13).
+
+        여기서 해석하거나 판단하지 않는다 — 명령의 유효성도 실행도 전부 Pi 몫이고,
+        결과(ack)는 on_local 이 클라우드로 되돌려 보낸다.
+        Pi 소켓이 끊겨 있으면 **버린다**. 나중에 실행하면 조작자가 이미 손을 뗀
+        뒤에 윈치 모델만 움직여 실제와 어긋난다 (CLAUDE.md 6절).
+        """
+        sock = self.local_sock
+        if sock is None:
+            log(f"명령 버림 — 라즈베리파이 연결 끊김: {cmd.get('cmd')}")
+            await self.push({"type": "ack", "ack": {
+                "type": "ack", "cmd": cmd.get("cmd"), "ok": False, "reason": "local_down"}})
+            return
+        try:
+            await sock.send(json.dumps(cmd, allow_nan=False))
+            self.relayed_cmds += 1
+            log(f"명령 중계 → Pi: {cmd.get('cmd')}")
+        except Exception as exc:
+            log(f"명령 중계 실패: {exc}")
 
     async def survey_row(self, sid):
         """차수 행 한 건. /surveys 는 id 를 `survey` 키로 준다 — 미러 스키마에 맞춰 되돌린다."""
@@ -145,10 +180,27 @@ class Forwarder:
 
                     await self.backfill(ws, max_ts)
 
-                    while True:
-                        msg = await self.out.get()
-                        await ws.send(json.dumps(msg, allow_nan=False))
-                        self.sent += 1
+                    # 송신(Pi→클라우드)과 수신(클라우드→Pi 명령)을 같이 돌린다.
+                    # 둘 중 하나가 죽으면 연결을 새로 맺는다.
+                    async def pump_out():
+                        while True:
+                            msg = await self.out.get()
+                            await ws.send(json.dumps(msg, allow_nan=False))
+                            self.sent += 1
+
+                    async def pump_in():
+                        while True:
+                            msg = json.loads(await ws.recv())
+                            if msg.get("type") == "cmd":
+                                await self.on_cloud_cmd(msg.get("msg") or {})
+
+                    done, rest = await asyncio.wait(
+                        [asyncio.create_task(pump_out()), asyncio.create_task(pump_in())],
+                        return_when=asyncio.FIRST_EXCEPTION)
+                    for t in rest:
+                        t.cancel()
+                    for t in done:
+                        t.result()          # 예외를 밖으로 올려 재연결시킨다
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -203,7 +255,8 @@ class Forwarder:
     async def report(self, every=60):
         while True:
             await asyncio.sleep(every)
-            log(f"중계 {self.sent}건 · 대기 {self.out.qsize()} · 버림 {self.dropped}")
+            log(f"중계 {self.sent}건 · 대기 {self.out.qsize()} · 버림 {self.dropped} "
+                f"· 명령 {self.relayed_cmds}건")
 
     async def run(self):
         if self.dry_run:
